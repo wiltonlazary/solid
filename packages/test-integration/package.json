@@ -3,12 +3,16 @@
   "private": true,
   "scripts": {
     "test": "npm run test:imports",
-    "test:integrations": "jest",
+    "test:integrations": "vitest run",
     "test:imports": "node test-imports.mjs"
   },
   "dependencies": {
-    "babel-preset-solid": "^1.0.1",
-    "solid-js": "^1.0.2"
+    "babel-preset-solid": "workspace:*",
+    "solid-js": "workspace:*"
   },
-  "version": "1.0.2"
+  "devDependencies": {
+    "gitly": "^2.2.1",
+    "shelljs": "^0.8.5"
+  },
+  "version": "1.7.7"
 }

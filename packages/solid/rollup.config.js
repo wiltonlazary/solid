@@ -1,8 +1,8 @@
-import copy from "rollup-plugin-copy";
 import nodeResolve from "@rollup/plugin-node-resolve";
 import babel from "@rollup/plugin-babel";
 import cleanup from "rollup-plugin-cleanup";
 import replace from "@rollup/plugin-replace";
+import { fileURLToPath } from "node:url";
 
 const plugins = [
   nodeResolve({
@@ -19,7 +19,7 @@ const plugins = [
         "babel-plugin-transform-rename-import",
         {
           original: "rxcore",
-          replacement: `../../../packages/solid/web/src/core`
+          replacement: fileURLToPath(new URL("web/src/core", import.meta.url))
         }
       ]
     ]
@@ -29,6 +29,13 @@ const plugins = [
     extensions: [".js", ".ts"]
   })
 ];
+
+const replaceDev = isDev =>
+  replace({
+    '"_SOLID_DEV_"': isDev,
+    preventAssignment: true,
+    delimiters: ["", ""]
+  });
 
 export default [
   {
@@ -43,20 +50,7 @@ export default [
         format: "es"
       }
     ],
-    plugins: [
-      replace({
-        '"_SOLID_DEV_"': false,
-        delimiters: ["", ""]
-      }),
-      copy({
-        targets: [
-          {
-            src: "./src/jsx.d.ts",
-            dest: "./types/"
-          }
-        ]
-      })
-    ].concat(plugins)
+    plugins: [replaceDev(false)].concat(plugins)
   },
   {
     input: "src/server/index.ts",
@@ -85,7 +79,7 @@ export default [
         format: "es"
       }
     ],
-    plugins
+    plugins: [replaceDev(true)].concat(plugins)
   },
   {
     input: "store/src/index.ts",
@@ -100,12 +94,7 @@ export default [
       }
     ],
     external: ["solid-js"],
-    plugins: [
-      replace({
-        '"_SOLID_DEV_"': false,
-        delimiters: ["", ""]
-      })
-    ].concat(plugins)
+    plugins: [replaceDev(false)].concat(plugins)
   },
   {
     input: "store/src/server.ts",
@@ -135,7 +124,7 @@ export default [
       }
     ],
     external: ["solid-js"],
-    plugins
+    plugins: [replaceDev(true)].concat(plugins)
   },
   {
     input: "web/src/index.ts",
@@ -150,22 +139,9 @@ export default [
       }
     ],
     external: ["solid-js"],
-    plugins: [
-      replace({
-        '"_DX_DEV_"': false,
-        delimiters: ["", ""]
-      }),
-      copy({
-        targets: [
-          {
-            src: ["../../node_modules/dom-expressions/src/client.d.ts"],
-            dest: "./web/src/"
-          },
-          { src: "../../node_modules/dom-expressions/src/client.d.ts", dest: "./web/types/" }
-        ]
-      })
-    ].concat(plugins)
-  }, {
+    plugins: [replaceDev(false)].concat(plugins)
+  },
+  {
     input: "web/server/index.ts",
     output: [
       {
@@ -177,18 +153,10 @@ export default [
         format: "es"
       }
     ],
-    external: ["solid-js", "stream"],
-    plugins: [
-      copy({
-        targets: [
-          {
-            src: ["../../node_modules/dom-expressions/src/server.d.ts"],
-            dest: "./web/server"
-          }
-        ]
-      })
-    ].concat(plugins)
-  }, {
+    external: ["solid-js", "stream", "seroval"],
+    plugins
+  },
+  {
     input: "web/src/index.ts",
     output: [
       {
@@ -201,7 +169,37 @@ export default [
       }
     ],
     external: ["solid-js"],
-    plugins
+    plugins: [replaceDev(true)].concat(plugins)
+  },
+  {
+    input: "universal/src/index.ts",
+    output: [
+      {
+        file: "universal/dist/universal.cjs",
+        format: "cjs"
+      },
+      {
+        file: "universal/dist/universal.js",
+        format: "es"
+      }
+    ],
+    external: ["solid-js"],
+    plugins: [replaceDev(false)].concat(plugins)
+  },
+  {
+    input: "universal/src/index.ts",
+    output: [
+      {
+        file: "universal/dist/dev.cjs",
+        format: "cjs"
+      },
+      {
+        file: "universal/dist/dev.js",
+        format: "es"
+      }
+    ],
+    external: ["solid-js"],
+    plugins: [replaceDev(true)].concat(plugins)
   },
   {
     input: "html/src/index.ts",
@@ -233,6 +231,21 @@ export default [
       }
     ],
     external: ["solid-js/web"],
+    plugins
+  },
+  {
+    input: "h/jsx-runtime/src/index.ts",
+    output: [
+      {
+        file: "h/jsx-runtime/dist/jsx.cjs",
+        format: "cjs"
+      },
+      {
+        file: "h/jsx-runtime/dist/jsx.js",
+        format: "es"
+      }
+    ],
+    external: ["solid-js/h"],
     plugins
   }
 ];

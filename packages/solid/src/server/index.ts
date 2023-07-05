@@ -4,6 +4,7 @@ export {
   createComputed,
   createRenderEffect,
   createEffect,
+  createReaction,
   createDeferred,
   createSelector,
   createMemo,
@@ -14,6 +15,7 @@ export {
   untrack,
   batch,
   on,
+  children,
   createContext,
   useContext,
   getOwner,
@@ -21,12 +23,16 @@ export {
   equalFn,
   requestCallback,
   mapArray,
+  observable,
+  from,
   $PROXY,
-  DEV
-} from "./reactive";
+  $DEVCOMP,
+  $TRACK,
+  DEV,
+  enableExternalSource
+} from "./reactive.js";
 
 export {
-  awaitSuspense,
   mergeProps,
   splitProps,
   createComponent,
@@ -39,12 +45,14 @@ export {
   Suspense,
   SuspenseList,
   createResource,
+  resetErrorBoundaries,
+  enableScheduling,
+  enableHydration,
+  startTransition,
   useTransition,
+  createUniqueId,
   lazy,
   sharedConfig
-} from "./rendering";
+} from "./rendering.js";
 
-export type { Component, Resource } from "./rendering";
-
-
-
+export type { Component, Resource } from "./rendering.js";

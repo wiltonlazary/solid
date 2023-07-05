@@ -1,4 +1,4 @@
-import { ssr, ssrSpread } from "./server";
+import { ssrElement } from "./server.js";
 import { splitProps, Component, JSX } from "solid-js";
 
 export * from "./server";
@@ -15,9 +15,15 @@ export {
   mergeProps
 } from "solid-js";
 
-export const isServer = true;
+export const isServer: boolean = true;
+export const isDev: boolean = false;
 
+export function render() {}
+export function hydrate() {}
+export function insert() {}
 export function spread() {}
+export function addEventListener() {}
+export function delegateEvents(): void {}
 
 export function Dynamic<T>(
   props: T & { children?: any; component?: Component<T> | string | keyof JSX.IntrinsicElements }
@@ -29,8 +35,7 @@ export function Dynamic<T>(
   if (comp) {
     if (t === "function") return (comp as Function)(others);
     else if (t === "string") {
-      const [local, sOthers] = splitProps(others, ["children"]);
-      return ssr([`<${comp} `, ">", `</${comp}>`], ssrSpread(sOthers), local.children || "");
+      return ssrElement(comp as string, others, undefined, true);
     }
   }
 }

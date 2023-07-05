@@ -1,7 +1,11 @@
-/* @jsxImportSource solid-js */
-import { createRoot, createSignal, JSX } from "../../src";
+/**
+ * @jsxImportSource solid-js
+ * @vitest-environment jsdom
+ */
 
-declare module "solid-js" {
+import { createRoot, createSignal, createUniqueId, JSX, children } from "../../src";
+
+declare module "solid-js/jsx-runtime" {
   namespace JSX {
     interface Directives {
       getRef: boolean;
@@ -35,19 +39,20 @@ describe("Basic element attributes", () => {
     expect(d.className).toBe("first third fourth");
   });
 
-  test("ternary expression triggered", (done) => {
-    let div: HTMLDivElement;
-    createRoot(() => {
-      const [s, setS] = createSignal(0);
-      div = (<div>{s() > 5 ? "Large" : "Small"}</div>) as HTMLDivElement;
-      expect(div.innerHTML).toBe("Small");
-      setTimeout(() => {
-        setS(7);
-        expect(div.innerHTML).toBe("Large");
-        done();
+  test("ternary expression triggered", () =>
+    new Promise(done => {
+      let div: HTMLDivElement;
+      createRoot(() => {
+        const [s, setS] = createSignal(0);
+        div = (<div>{s() > 5 ? "Large" : "Small"}</div>) as HTMLDivElement;
+        expect(div.innerHTML).toBe("Small");
+        setTimeout(() => {
+          setS(7);
+          expect(div.innerHTML).toBe("Large");
+          done(undefined);
+        });
       });
-    });
-  });
+    }));
 
   test("boolean expression triggered once", () => {
     let div1: HTMLDivElement, div2: HTMLDivElement;
@@ -63,8 +68,54 @@ describe("Basic element attributes", () => {
   test("directives work properly", () => {
     let ref: HTMLDivElement,
       el!: HTMLDivElement,
-      getRef = (el: HTMLDivElement) => ref = el,
+      getRef = (el: HTMLDivElement) => (ref = el),
       d = (<div use:getRef ref={el} />) as HTMLDivElement;
     expect(ref!).toBe(el);
-  })
+  });
+
+  test("uniqueId", () => {
+    let div: HTMLDivElement;
+    createRoot(() => {
+      const id = createUniqueId();
+      div = (
+        <div>
+          <label for={id}>Hi</label>
+          <input type="text" id={id} />
+        </div>
+      ) as HTMLDivElement;
+    });
+    expect((div!.firstChild as HTMLLabelElement).htmlFor).toBe(
+      (div!.firstChild!.nextSibling as HTMLInputElement).id
+    );
+  });
+
+  test("children", () => {
+    const Comp = (props: { children?: JSX.Element }) => {
+      const c = children(() => props.children);
+      return (
+        <>
+          {c.toArray().map(i => (
+            <div>{i}</div>
+          ))}
+        </>
+      );
+    };
+    const res: HTMLDivElement = createRoot(() => {
+      return (
+        <div>
+          <Comp>
+            <span>Hello</span>
+          </Comp>
+          <Comp>
+            <span>Hello</span>
+            <span>Jake</span>
+          </Comp>
+          <Comp />
+        </div>
+      ) as HTMLDivElement;
+    });
+    expect(res.innerHTML).toBe(
+      "<div><span>Hello</span></div><div><span>Hello</span></div><div><span>Jake</span></div>"
+    );
+  });
 });

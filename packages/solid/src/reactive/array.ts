@@ -1,4 +1,12 @@
-import { onCleanup, createRoot, untrack, createSignal, Owner, Accessor } from "./signal";
+import {
+  onCleanup,
+  createRoot,
+  untrack,
+  createSignal,
+  Accessor,
+  Setter,
+  $TRACK
+} from "./signal.js";
 
 const FALLBACK = Symbol("fallback");
 function dispose(d: (() => void)[]) {
@@ -6,8 +14,38 @@ function dispose(d: (() => void)[]) {
 }
 
 // Modified version of mapSample from S-array[https://github.com/adamhaile/S-array] by Adam Haile
+/**
+The MIT License (MIT)
+
+Copyright (c) 2017 Adam Haile
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+/**
+ * reactively transforms an array with a callback function - underlying helper for the `<For>` control flow
+ *
+ * similar to `Array.prototype.map`, but gets the index as accessor, transforms only values that changed and returns an accessor and reactively tracks changes to the list.
+ *
+ * @description https://www.solidjs.com/docs/latest/api#maparray
+ */
 export function mapArray<T, U>(
-  list: Accessor<readonly T[]>,
+  list: Accessor<readonly T[] | undefined | null | false>,
   mapFn: (v: T, i: Accessor<number>) => U,
   options: { fallback?: Accessor<any> } = {}
 ): () => U[] {
@@ -22,6 +60,7 @@ export function mapArray<T, U>(
     let newItems = list() || [],
       i: number,
       j: number;
+    (newItems as any)[$TRACK]; // top level tracking
     return untrack(() => {
       let newLen = newItems.length,
         newIndices: Map<T | typeof FALLBACK, number>,
@@ -126,7 +165,7 @@ export function mapArray<T, U>(
     function mapper(disposer: () => void) {
       disposers[j] = disposer;
       if (indexes) {
-        const [s, set] = createSignal(j);
+        const [s, set] = "_SOLID_DEV_" ? createSignal(j, { name: "index" }) : createSignal(j);
         indexes[j] = set;
         return mapFn(newItems[j], s);
       }
@@ -135,21 +174,29 @@ export function mapArray<T, U>(
   };
 }
 
+/**
+ * reactively maps arrays by index instead of value - underlying helper for the `<Index>` control flow
+ *
+ * similar to `Array.prototype.map`, but gets the value as an accessor, transforms only changed items of the original arrays anew and returns an accessor.
+ *
+ * @description https://www.solidjs.com/docs/latest/api#indexarray
+ */
 export function indexArray<T, U>(
-  list: Accessor<readonly T[]>,
+  list: Accessor<readonly T[] | undefined | null | false>,
   mapFn: (v: Accessor<T>, i: number) => U,
   options: { fallback?: Accessor<any> } = {}
 ): () => U[] {
   let items: (T | typeof FALLBACK)[] = [],
     mapped: U[] = [],
     disposers: (() => void)[] = [],
-    signals: ((v: (prev: T) => T) => T)[] = [],
+    signals: Setter<T>[] = [],
     len = 0,
     i: number;
 
   onCleanup(() => dispose(disposers));
   return () => {
     const newItems = list() || [];
+    (newItems as any)[$TRACK]; // top level tracking
     return untrack(() => {
       if (newItems.length === 0) {
         if (len !== 0) {
@@ -194,7 +241,9 @@ export function indexArray<T, U>(
     });
     function mapper(disposer: () => void) {
       disposers[i] = disposer;
-      const [s, set] = createSignal(newItems[i]);
+      const [s, set] = "_SOLID_DEV_"
+        ? createSignal(newItems[i], { name: "value" })
+        : createSignal(newItems[i]);
       signals[i] = set;
       return mapFn(s, i);
     }

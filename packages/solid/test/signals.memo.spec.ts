@@ -1,7 +1,126 @@
-import { createRoot, createSignal, createComputed, createMemo } from "../src";
+import { createRoot, createSignal, createMemo, Accessor } from "../src";
 
 describe("createMemo", () => {
   describe("executing propagating", () => {
+    it("propagates in topological order", () => {
+      createRoot(() => {
+        //
+        //     c1
+        //    /  \
+        //   /    \
+        //  b1     b2
+        //   \    /
+        //    \  /
+        //     a1
+        //
+        var seq = "",
+          [a1, setA1] = createSignal(false),
+          b1 = createMemo(
+            () => {
+              a1();
+              seq += "b1";
+            },
+            undefined,
+            { equals: false }
+          ),
+          b2 = createMemo(
+            () => {
+              a1();
+              seq += "b2";
+            },
+            undefined,
+            { equals: false }
+          ),
+          c1 = createMemo(
+            () => {
+              b1(), b2();
+              seq += "c1";
+            },
+            undefined,
+            { equals: false }
+          );
+
+        seq = "";
+        setA1(true);
+
+        expect(seq).toBe("b1b2c1");
+      });
+    });
+
+    it("only propagates once with linear convergences", () => {
+      createRoot(() => {
+        //         d
+        //         |
+        // +---+---+---+---+
+        // v   v   v   v   v
+        // f1  f2  f3  f4  f5
+        // |   |   |   |   |
+        // +---+---+---+---+
+        //         v
+        //         g
+        var [d, setD] = createSignal(0),
+          f1 = createMemo(() => d()),
+          f2 = createMemo(() => d()),
+          f3 = createMemo(() => d()),
+          f4 = createMemo(() => d()),
+          f5 = createMemo(() => d()),
+          gcount = 0,
+          g = createMemo(() => {
+            gcount++;
+            return f1() + f2() + f3() + f4() + f5();
+          });
+
+        gcount = 0;
+        setD(1);
+        expect(gcount).toBe(1);
+      });
+    });
+
+    it("only propagates once with exponential convergence", () => {
+      createRoot(() => {
+        //     d
+        //     |
+        // +---+---+
+        // v   v   v
+        // f1  f2 f3
+        //   \ | /
+        //     O
+        //   / | \
+        // v   v   v
+        // g1  g2  g3
+        // +---+---+
+        //     v
+        //     h
+        var [d, setD] = createSignal(0),
+          f1 = createMemo(() => {
+            return d();
+          }),
+          f2 = createMemo(() => {
+            return d();
+          }),
+          f3 = createMemo(() => {
+            return d();
+          }),
+          g1 = createMemo(() => {
+            return f1() + f2() + f3();
+          }),
+          g2 = createMemo(() => {
+            return f1() + f2() + f3();
+          }),
+          g3 = createMemo(() => {
+            return f1() + f2() + f3();
+          }),
+          hcount = 0,
+          h = createMemo(() => {
+            hcount++;
+            return g1() + g2() + g3();
+          });
+        hcount = 0;
+        setD(1);
+        expect(hcount).toBe(1);
+      });
+    });
+
     it("does not trigger downstream computations unless changed", () => {
       createRoot(() => {
         const [s1, set] = createSignal(1, { equals: false });
@@ -10,7 +129,7 @@ describe("createMemo", () => {
           order += "t1";
           return s1();
         });
-        createComputed(() => {
+        createMemo(() => {
           order += "c1";
           t1();
         });
@@ -24,7 +143,7 @@ describe("createMemo", () => {
       });
     });
 
-    it("applies updates to changed dependees in same order as createComputed", () => {
+    it("applies updates to changed dependees in same order as createMemo", () => {
       createRoot(() => {
         const [s1, set] = createSignal(0);
         let order = "";
@@ -32,11 +151,11 @@ describe("createMemo", () => {
           order += "t1";
           return s1() === 0;
         });
-        createComputed(() => {
+        createMemo(() => {
           order += "c1";
           return s1();
         });
-        createComputed(() => {
+        createMemo(() => {
           order += "c2";
           return t1();
         });
@@ -44,7 +163,7 @@ describe("createMemo", () => {
         expect(order).toBe("t1c1c2");
         order = "";
         set(1);
-        expect(order).toBe("t1c1c2");
+        expect(order).toBe("t1c2c1");
       });
     });
 
@@ -57,21 +176,21 @@ describe("createMemo", () => {
           order += "t1";
           return s1() === 0;
         });
-        createComputed(() => {
+        createMemo(() => {
           order += "c1";
           return s1();
         });
-        createComputed(() => {
+        createMemo(() => {
           order += "c2";
           t1();
-          createComputed(() => {
+          createMemo(() => {
             order += "c2_1";
             return s2();
           });
         });
         order = "";
         set(1);
-        expect(order).toBe("t1c1c2c2_1");
+        expect(order).toBe("t1c2c2_1c1");
       });
     });
   });
@@ -197,7 +316,7 @@ describe("createMemo", () => {
           const b = s2();
           return a && b;
         });
-        createComputed(() => {
+        createMemo(() => {
           t1();
           t2();
           c1();
@@ -211,44 +330,40 @@ describe("createMemo", () => {
       });
     });
 
-    // it("evaluates stale computations before dependendees when trackers stay unchanged", () => {
-    //   createRoot(() => {
-    //     let [s1, set] = createSignal(1);
-    //     let order = "";
-    //     let t1 = createMemo(
-    //       () => {
-    //         order += "t1";
-    //         return s1() > 2;
-    //       },
-    //       undefined,
-    //       true
-    //     );
-    //     let t2 = createMemo(
-    //       () => {
-    //         order += "t2";
-    //         return s1() > 2;
-    //       },
-    //       undefined,
-    //       true
-    //     );
-    //     let c1 = createMemo(() => {
-    //       order += "c1";
-    //       s1();
-    //     });
-    //     createComputed(() => {
-    //       order += "c2";
-    //       t1();
-    //       t2();
-    //       c1();
-    //     });
-    //     order = "";
-    //     set(1);
-    //     expect(order).toBe("t1t2c1c2");
-    //     order = "";
-    //     set(3);
-    //     expect(order).toBe("t1c2t2c1");
-    //   });
-    // });
+    it("evaluates stale computations before dependees when trackers stay unchanged", () => {
+      createRoot(() => {
+        let [s1, set] = createSignal(1, { equals: false });
+        let order = "";
+        let t1 = createMemo(() => {
+          order += "t1";
+          return s1() > 2;
+        });
+        let t2 = createMemo(() => {
+          order += "t2";
+          return s1() > 2;
+        });
+        let c1 = createMemo(
+          () => {
+            order += "c1";
+            s1();
+          },
+          undefined,
+          { equals: false }
+        );
+        createMemo(() => {
+          order += "c2";
+          t1();
+          t2();
+          c1();
+        });
+        order = "";
+        set(1);
+        expect(order).toBe("t1t2c1c2");
+        order = "";
+        set(3);
+        expect(order).toBe("t2c2t1c1");
+      });
+    });
 
     it("evaluates nested trackings", () => {
       createRoot(() => {
@@ -260,7 +375,7 @@ describe("createMemo", () => {
           c1 = createMemo(() => s2());
           return s1();
         });
-        createComputed(() => {
+        createMemo(() => {
           count++;
           c1();
         });
@@ -281,7 +396,7 @@ describe("createMemo", () => {
           order += "t2";
           return s1();
         });
-        createComputed(() => {
+        createMemo(() => {
           t1();
           t2();
           order += "c1";
@@ -297,7 +412,7 @@ describe("createMemo", () => {
         const [s1, set] = createSignal(1);
         let order = "";
         let c2: () => boolean;
-        createComputed(() => {
+        createMemo(() => {
           order += "c1";
           if (s1() > 1) {
             c2();
@@ -340,7 +455,7 @@ describe("createMemo", () => {
           order += "c2";
           return c1();
         });
-        createComputed(() => {
+        createMemo(() => {
           order += "c3";
           return c2();
         });
@@ -386,7 +501,9 @@ describe("createMemo", () => {
     it("throws when cycle created by modifying a branch", () => {
       createRoot(() => {
         var [d, set] = createSignal(1),
-          f: () => number = createMemo(() => (f ? f() : d()), undefined, { equals: false });
+          f: Accessor<number | undefined> = createMemo(() => (f ? f() : d()), undefined, {
+            equals: false
+          });
 
         expect(() => {
           set(0);

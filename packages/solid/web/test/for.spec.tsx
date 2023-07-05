@@ -1,4 +1,8 @@
-/* @jsxImportSource solid-js */
+/**
+ * @jsxImportSource solid-js
+ * @vitest-environment jsdom
+ */
+
 import { createRoot, createSignal } from "../../src";
 import { insert, For } from "../src";
 
@@ -410,7 +414,9 @@ describe("Testing each with indexes", () => {
   const [list, setList] = createSignal<string[]>([]);
   const Component = () => (
     <div ref={div}>
-      <For each={list()} fallback={"Hi"}>{(item, i) => <span>{item + i()}</span>}</For>
+      <For each={list()} fallback={"Hi"}>
+        {(item, i) => <span>{item + i()}</span>}
+      </For>
     </div>
   );
 

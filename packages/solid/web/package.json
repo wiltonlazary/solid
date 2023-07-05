@@ -9,5 +9,42 @@
   "unpkg": "./dist/web.cjs",
   "types": "./types/index.d.ts",
   "type": "module",
-  "sideEffects": false
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "worker": {
+        "types": "./types/index.d.ts",
+        "import": "./dist/server.js",
+        "require": "./dist/server.cjs"
+      },
+      "browser": {
+        "development": {
+          "types": "./types/index.d.ts",
+          "import": "./dist/dev.js",
+          "require": "./dist/dev.cjs"
+        },
+        "types": "./types/index.d.ts",
+        "import": "./dist/web.js",
+        "require": "./dist/web.cjs"
+      },
+      "deno": {
+        "types": "./types/index.d.ts",
+        "import": "./dist/server.js",
+        "require": "./dist/server.cjs"
+      },
+      "node": {
+        "types": "./types/index.d.ts",
+        "import": "./dist/server.js",
+        "require": "./dist/server.cjs"
+      },
+      "development": {
+        "types": "./types/index.d.ts",
+        "import": "./dist/dev.js",
+        "require": "./dist/dev.cjs"
+      },
+      "types": "./types/index.d.ts",
+      "import": "./dist/web.js",
+      "require": "./dist/web.cjs"
+    }
+  }
 }

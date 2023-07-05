@@ -1,55 +1,78 @@
 export {
-  createRoot,
-  createSignal,
-  createEffect,
-  createRenderEffect,
-  createComputed,
-  createDeferred,
-  createSelector,
-  createMemo,
-  createResource,
-  onMount,
-  onCleanup,
-  onError,
-  untrack,
+  $DEVCOMP,
+  $PROXY,
+  $TRACK,
   batch,
-  on,
-  useTransition,
-  createContext,
-  useContext,
   children,
+  createComputed,
+  createContext,
+  createDeferred,
+  createEffect,
+  createMemo,
+  createReaction,
+  createRenderEffect,
+  createResource,
+  createRoot,
+  createSelector,
+  createSignal,
+  enableExternalSource,
+  enableScheduling,
+  equalFn,
   getListener,
   getOwner,
+  on,
+  onCleanup,
+  onError,
+  catchError,
+  onMount,
   runWithOwner,
-  equalFn,
-  $PROXY
-} from "./reactive/signal";
-export type { Accessor, Resource, ResourceReturn, Context, ReturnTypes } from "./reactive/signal";
+  startTransition,
+  untrack,
+  useContext,
+  useTransition
+} from "./reactive/signal.js";
+export type {
+  Accessor,
+  AccessorArray,
+  ChildrenReturn,
+  Context,
+  EffectFunction,
+  EffectOptions,
+  InitializedResource,
+  InitializedResourceOptions,
+  InitializedResourceReturn,
+  MemoOptions,
+  NoInfer,
+  OnEffectFunction,
+  OnOptions,
+  Owner,
+  Resource,
+  ResourceActions,
+  ResourceFetcher,
+  ResourceFetcherInfo,
+  ResourceOptions,
+  ResourceReturn,
+  ResourceSource,
+  ReturnTypes,
+  Setter,
+  Signal,
+  SignalOptions
+} from "./reactive/signal.js";
 
-export * from "./reactive/observable";
-export * from "./reactive/scheduler";
-export * from "./reactive/array";
-export * from "./render";
+export * from "./reactive/observable.js";
+export * from "./reactive/scheduler.js";
+export * from "./reactive/array.js";
+export * from "./render/index.js";
 
-import type { JSX } from "./jsx";
+import type { JSX } from "./jsx.js";
 type JSXElement = JSX.Element;
 export type { JSXElement, JSX };
 
-// mock server endpoint for dom-expressions
-export function awaitSuspense() {}
-
 // dev
-import { writeSignal, serializeGraph, registerGraph, hashValue } from "./reactive/signal";
-let DEV: {
-  writeSignal: typeof writeSignal;
-  serializeGraph: typeof serializeGraph;
-  registerGraph: typeof registerGraph;
-  hashValue: typeof hashValue;
-};
-if ("_SOLID_DEV_") {
-  DEV = { writeSignal, serializeGraph, registerGraph, hashValue };
-}
-export { DEV };
+import { registerGraph, writeSignal, DevHooks } from "./reactive/signal.js";
+export const DEV = "_SOLID_DEV_"
+  ? ({ hooks: DevHooks, writeSignal, registerGraph } as const)
+  : undefined;
 
 // handle multiple instance check
 declare global {

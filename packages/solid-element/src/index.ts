@@ -6,25 +6,41 @@ import {
   ComponentOptions,
   PropsDefinitionInput
 } from "component-register";
-export { hot, getCurrentElement } from "component-register";
+export { hot, getCurrentElement, noShadowDOM } from "component-register";
 export type ComponentType<T> = mComponentType<T>;
 import { createRoot, createSignal } from "solid-js";
 import { insert } from "solid-js/web";
 
-function createProps<T>(raw: T) {
+function createProps<T extends object>(raw: T) {
   const keys = Object.keys(raw) as (keyof T)[];
   const props = {};
   for (let i = 0; i < keys.length; i++) {
     const [get, set] = createSignal(raw[keys[i]]);
     Object.defineProperty(props, keys[i], {
       get,
-      set(v) { set(() => v); }
+      set(v) {
+        set(() => v);
+      }
     });
   }
   return props as T;
 }
 
-function withSolid<T>(ComponentType: ComponentType<T>): ComponentType<T> {
+function lookupContext(el: ICustomElement & { _$owner?: any }) {
+  if (el.assignedSlot && el.assignedSlot._$owner) return el.assignedSlot._$owner;
+  let next: Element & { _$owner?: any } = el.parentNode;
+  while (
+    next &&
+    !next._$owner &&
+    !(next.assignedSlot && (next.assignedSlot as Element & { _$owner?: any })._$owner)
+  )
+    next = next.parentNode as Element;
+  return next && next.assignedSlot
+    ? (next.assignedSlot as Element & { _$owner?: any })._$owner
+    : el._$owner;
+}
+
+function withSolid<T extends object>(ComponentType: ComponentType<T>): ComponentType<T> {
   return (rawProps: T, options: ComponentOptions) => {
     const { element } = options as {
       element: ICustomElement & { _$owner?: any };
@@ -40,20 +56,20 @@ function withSolid<T>(ComponentType: ComponentType<T>): ComponentType<T> {
 
       const comp = (ComponentType as FunctionComponent<T>)(props as T, options);
       return insert(element.renderRoot, comp);
-    }, (element.assignedSlot && element.assignedSlot._$owner) || element._$owner);
+    }, lookupContext(element));
   };
 }
 
-function customElement<T>(
+function customElement<T extends object>(
   tag: string,
   ComponentType: ComponentType<T>
 ): (ComponentType: ComponentType<T>) => any;
-function customElement<T>(
+function customElement<T extends object>(
   tag: string,
   props: PropsDefinitionInput<T>,
   ComponentType: ComponentType<T>
 ): (ComponentType: ComponentType<T>) => any;
-function customElement<T>(
+function customElement<T extends object>(
   tag: string,
   props: PropsDefinitionInput<T> | ComponentType<T>,
   ComponentType?: ComponentType<T>

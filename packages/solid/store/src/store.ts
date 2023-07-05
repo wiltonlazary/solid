@@ -1,74 +1,93 @@
-import {
-  getListener,
-  batch,
-  DEV,
-  $PROXY,
-  Accessor, createSignal
-} from "solid-js";
-export const $RAW = Symbol("store-raw"),
-  $NODE = Symbol("store-node"),
-  $NAME = Symbol("store-name");
+import { getListener, batch, DEV, $PROXY, $TRACK, createSignal } from "solid-js";
 
-export type StoreNode = {
-  [$NODE]?: any;
-  [$PROXY]?: any;
-  [$NAME]?: string;
-  [k: string]: any;
-  [k: number]: any;
+export const $RAW = Symbol("store-raw"),
+  $NODE = Symbol("store-node");
+
+// debug hooks for devtools
+export const DevHooks: { onStoreNodeUpdate: OnStoreNodeUpdate | null } = {
+  onStoreNodeUpdate: null
 };
 
-// well-known symbols need special treatment until https://github.com/microsoft/TypeScript/issues/24622 is implemented.
-type AddSymbolToPrimitive<T> = T extends { [Symbol.toPrimitive]: infer V }
-  ? { [Symbol.toPrimitive]: V }
-  : {};
-type AddSymbolIterator<T> = T extends { [Symbol.iterator]: infer V }
-  ? { [Symbol.iterator]: V }
-  : {};
-type AddSymbolToStringTag<T> = T extends { [Symbol.toStringTag]: infer V }
-  ? { [Symbol.toStringTag]: V }
-  : {};
-type AddCallable<T> = T extends { (...x: any[]): infer V } ? { (...x: Parameters<T>): V } : {};
+type DataNode = {
+  (): any;
+  $(value?: any): void;
+};
+type DataNodes = Record<PropertyKey, DataNode | undefined>;
 
-export type NotWrappable = string | number | boolean | Function | null;
-// Intersection for missing fields https://github.com/microsoft/TypeScript/issues/13543
-export type Store<T> = {
-  [P in keyof T]: T[P] extends object ? Store<T[P]> & T[P] : T[P];
-} & {
-  [$RAW]?: T;
-} & AddSymbolToPrimitive<T> &
-  AddSymbolIterator<T> &
-  AddSymbolToStringTag<T> &
-  AddCallable<T>;
+export type OnStoreNodeUpdate = (
+  state: StoreNode,
+  property: PropertyKey,
+  value: StoreNode | NotWrappable,
+  prev: StoreNode | NotWrappable
+) => void;
 
-function wrap<T extends StoreNode>(value: T, name?: string): Store<T> {
+export interface StoreNode {
+  [$NODE]?: DataNodes;
+  [key: PropertyKey]: any;
+}
+
+export namespace SolidStore {
+  export interface Unwrappable {}
+}
+export type NotWrappable =
+  | string
+  | number
+  | bigint
+  | symbol
+  | boolean
+  | Function
+  | null
+  | undefined
+  | SolidStore.Unwrappable[keyof SolidStore.Unwrappable];
+export type Store<T> = T;
+
+function wrap<T extends StoreNode>(value: T): T {
   let p = value[$PROXY];
   if (!p) {
     Object.defineProperty(value, $PROXY, { value: (p = new Proxy(value, proxyTraps)) });
-    const keys = Object.keys(value),
-      desc = Object.getOwnPropertyDescriptors(value);
-    for (let i = 0, l = keys.length; i < l; i++) {
-      const prop = keys[i];
-      if (desc[prop].get) {
-        const get = desc[prop].get!.bind(p);
-        Object.defineProperty(value, prop, {
-          get
-        });
+    if (!Array.isArray(value)) {
+      const keys = Object.keys(value),
+        desc = Object.getOwnPropertyDescriptors(value);
+      for (let i = 0, l = keys.length; i < l; i++) {
+        const prop = keys[i];
+        if (desc[prop].get) {
+          Object.defineProperty(value, prop, {
+            enumerable: desc[prop].enumerable,
+            get: desc[prop].get!.bind(p)
+          });
+        }
       }
     }
-    if ("_SOLID_DEV_" && name) Object.defineProperty(value, $NAME, { value: name });
   }
   return p;
 }
 
+export function isWrappable<T>(obj: T | NotWrappable): obj is T;
 export function isWrappable(obj: any) {
+  let proto;
   return (
     obj != null &&
     typeof obj === "object" &&
-    (!obj.__proto__ || obj.__proto__ === Object.prototype || Array.isArray(obj))
+    (obj[$PROXY] ||
+      !(proto = Object.getPrototypeOf(obj)) ||
+      proto === Object.prototype ||
+      Array.isArray(obj))
   );
 }
 
-export function unwrap<T extends StoreNode>(item: any, set = new Set()): T {
+/**
+ * Returns the underlying data in the store without a proxy.
+ * @param item store proxy object
+ * @example
+ * ```js
+ * const initial = {z...};
+ * const [state, setState] = createStore(initial);
+ * initial === state; // => false
+ * initial === unwrap(state); // => true
+ * ```
+ */
+export function unwrap<T>(item: T, set?: Set<unknown>): T;
+export function unwrap<T>(item: any, set = new Set()): T {
   let result, unwrapped, v, prop;
   if ((result = item != null && item[$RAW])) return result;
   if (!isWrappable(item) || set.has(item)) return item;
@@ -87,7 +106,7 @@ export function unwrap<T extends StoreNode>(item: any, set = new Set()): T {
       desc = Object.getOwnPropertyDescriptors(item);
     for (let i = 0, l = keys.length; i < l; i++) {
       prop = keys[i];
-      if ((desc as any)[prop].get) continue;
+      if (desc[prop].get) continue;
       v = item[prop];
       if ((unwrapped = unwrap(v, set)) !== v) item[prop] = unwrapped;
     }
@@ -95,57 +114,84 @@ export function unwrap<T extends StoreNode>(item: any, set = new Set()): T {
   return item;
 }
 
-export function getDataNodes(target: StoreNode) {
+export function getDataNodes(target: StoreNode): DataNodes {
   let nodes = target[$NODE];
-  if (!nodes) Object.defineProperty(target, $NODE, { value: (nodes = {}) });
+  if (!nodes)
+    Object.defineProperty(target, $NODE, { value: (nodes = Object.create(null) as DataNodes) });
   return nodes;
 }
 
-export function proxyDescriptor(target: StoreNode, property: string | number | symbol) {
+export function getDataNode(nodes: DataNodes, property: PropertyKey, value: any) {
+  return nodes[property] || (nodes[property] = createDataNode(value));
+}
+
+export function proxyDescriptor(target: StoreNode, property: PropertyKey) {
   const desc = Reflect.getOwnPropertyDescriptor(target, property);
-  if (!desc || desc.get || property === $PROXY || property === $NODE || property === $NAME)
+  if (!desc || desc.get || !desc.configurable || property === $PROXY || property === $NODE)
     return desc;
   delete desc.value;
   delete desc.writable;
-  desc.get = () => target[$PROXY][property as string | number];
+  desc.get = () => target[$PROXY][property];
   return desc;
 }
 
-export function ownKeys(target: StoreNode) {
+export function trackSelf(target: StoreNode) {
   if (getListener()) {
     const nodes = getDataNodes(target);
     (nodes._ || (nodes._ = createDataNode()))();
   }
+}
+
+export function ownKeys(target: StoreNode) {
+  trackSelf(target);
   return Reflect.ownKeys(target);
 }
 
-export function createDataNode() {
-  const [s, set] = createSignal<void>(undefined, { equals: false });
-  (s as Accessor<void> & { $: () => void }).$ = set;
-  return s as Accessor<void> & { $: () => void };
+function createDataNode(value?: any) {
+  const [s, set] = createSignal<any>(value, {
+    equals: false,
+    internal: true
+  });
+  (s as DataNode).$ = set;
+  return s as DataNode;
 }
 
 const proxyTraps: ProxyHandler<StoreNode> = {
   get(target, property, receiver) {
     if (property === $RAW) return target;
     if (property === $PROXY) return receiver;
-    const value = target[property as string | number];
+    if (property === $TRACK) {
+      trackSelf(target);
+      return receiver;
+    }
+    const nodes = getDataNodes(target);
+    const tracked = nodes[property];
+    let value = tracked ? tracked() : target[property];
     if (property === $NODE || property === "__proto__") return value;
 
-    const wrappable = isWrappable(value);
-    if (getListener() && (typeof value !== "function" || target.hasOwnProperty(property))) {
-      let nodes, node;
-      if (wrappable && (nodes = getDataNodes(value))) {
-        node = nodes._ || (nodes._ = createDataNode());
-        node();
-      }
-      nodes = getDataNodes(target);
-      node = nodes[property] || (nodes[property] = createDataNode());
-      node();
+    if (!tracked) {
+      const desc = Object.getOwnPropertyDescriptor(target, property);
+      if (
+        getListener() &&
+        (typeof value !== "function" || target.hasOwnProperty(property)) &&
+        !(desc && desc.get)
+      )
+        value = getDataNode(nodes, property, value)();
     }
-    return wrappable
-      ? wrap(value, "_SOLID_DEV_" && target[$NAME] && `${target[$NAME]}:${property as string}`)
-      : value;
+    return isWrappable(value) ? wrap(value) : value;
+  },
+
+  has(target, property) {
+    if (
+      property === $RAW ||
+      property === $PROXY ||
+      property === $TRACK ||
+      property === $NODE ||
+      property === "__proto__"
+    )
+      return true;
+    this.get!(target, property, target);
+    return property in target;
   },
 
   set() {
@@ -163,20 +209,30 @@ const proxyTraps: ProxyHandler<StoreNode> = {
   getOwnPropertyDescriptor: proxyDescriptor
 };
 
-export function setProperty(state: StoreNode, property: string | number, value: any) {
-  if (state[property] === value) return;
-  const array = Array.isArray(state);
-  const len = state.length;
-  const isUndefined = value === undefined;
-  const notify = array || isUndefined === property in state;
-  if (isUndefined) {
-    delete state[property];
-  } else state[property] = value;
+export function setProperty(
+  state: StoreNode,
+  property: PropertyKey,
+  value: any,
+  deleting: boolean = false
+): void {
+  if (!deleting && state[property] === value) return;
+  const prev = state[property],
+    len = state.length;
+
+  if ("_SOLID_DEV_")
+    DevHooks.onStoreNodeUpdate && DevHooks.onStoreNodeUpdate(state, property, value, prev);
+
+  if (value === undefined) delete state[property];
+  else state[property] = value;
   let nodes = getDataNodes(state),
-    node;
-  (node = nodes[property]) && node.$();
-  if (array && state.length !== len) (node = nodes.length) && node.$(node, undefined);
-  notify && (node = nodes._) && node.$(node, undefined);
+    node: DataNode | undefined;
+  if ((node = getDataNode(nodes, property, prev))) node.$(() => value);
+
+  if (Array.isArray(state) && state.length !== len) {
+    for (let i = state.length; i < len; i++) (node = nodes[i]) && node.$();
+    (node = getDataNode(nodes, "length", len)) && node.$(state.length);
+  }
+  (node = nodes._) && node.$();
 }
 
 function mergeStoreNode(state: StoreNode, value: Partial<StoreNode>) {
@@ -187,7 +243,25 @@ function mergeStoreNode(state: StoreNode, value: Partial<StoreNode>) {
   }
 }
 
-export function updatePath(current: StoreNode, path: any[], traversed: (number | string)[] = []) {
+function updateArray(
+  current: StoreNode,
+  next: Array<any> | Record<string, any> | ((prev: StoreNode) => Array<any> | Record<string, any>)
+) {
+  if (typeof next === "function") next = next(current);
+  next = unwrap(next) as Array<any> | Record<string, any>;
+  if (Array.isArray(next)) {
+    if (current === next) return;
+    let i = 0,
+      len = next.length;
+    for (; i < len; i++) {
+      const value = next[i];
+      if (current[i] !== value) setProperty(current, i, value);
+    }
+    setProperty(current, "length", len);
+  } else mergeStoreNode(current, next);
+}
+
+export function updatePath(current: StoreNode, path: any[], traversed: PropertyKey[] = []) {
   let part,
     prev = current;
   if (path.length > 1) {
@@ -198,21 +272,20 @@ export function updatePath(current: StoreNode, path: any[], traversed: (number |
     if (Array.isArray(part)) {
       // Ex. update('data', [2, 23], 'label', l => l + ' !!!');
       for (let i = 0; i < part.length; i++) {
-        updatePath(current, [part[i]].concat(path), [part[i]].concat(traversed));
+        updatePath(current, [part[i]].concat(path), traversed);
       }
       return;
     } else if (isArray && partType === "function") {
       // Ex. update('data', i => i.id === 42, 'label', l => l + ' !!!');
       for (let i = 0; i < current.length; i++) {
-        if (part(current[i], i))
-          updatePath(current, [i].concat(path), ([i] as (number | string)[]).concat(traversed));
+        if (part(current[i], i)) updatePath(current, [i].concat(path), traversed);
       }
       return;
     } else if (isArray && partType === "object") {
       // Ex. update('data', { from: 3, to: 12, by: 2 }, 'label', l => l + ' !!!');
       const { from = 0, to = current.length - 1, by = 1 } = part;
       for (let i = from; i <= to; i += by) {
-        updatePath(current, [i].concat(path), ([i] as (number | string)[]).concat(traversed));
+        updatePath(current, [i].concat(path), traversed);
       }
       return;
     } else if (path.length > 1) {
@@ -234,147 +307,211 @@ export function updatePath(current: StoreNode, path: any[], traversed: (number |
   } else setProperty(current, part, value);
 }
 
-export type Readonly<T> = { readonly [K in keyof T]: DeepReadonly<T[K]> };
-export type DeepReadonly<T> = T extends [infer A]
-  ? Readonly<[A]>
-  : T extends [infer A, infer B]
-  ? Readonly<[A, B]>
-  : T extends [infer A, infer B, infer C]
-  ? Readonly<[A, B, C]>
-  : T extends [infer A, infer B, infer C, infer D]
-  ? Readonly<[A, B, C, D]>
-  : T extends [infer A, infer B, infer C, infer D, infer E]
-  ? Readonly<[A, B, C, D, E]>
-  : T extends [infer A, infer B, infer C, infer D, infer E, infer F]
-  ? Readonly<[A, B, C, D, E, F]>
-  : T extends [infer A, infer B, infer C, infer D, infer E, infer F, infer G]
-  ? Readonly<[A, B, C, D, E, F, G]>
-  : T extends [infer A, infer B, infer C, infer D, infer E, infer F, infer G, infer H]
-  ? Readonly<[A, B, C, D, E, F, G, H]>
-  : T extends object
-  ? Readonly<T>
-  : T;
+/** @deprecated */
+export type DeepReadonly<T> = 0 extends 1 & T
+  ? T
+  : T extends NotWrappable
+  ? T
+  : {
+      readonly [K in keyof T]: DeepReadonly<T[K]>;
+    };
+/** @deprecated */
+export type DeepMutable<T> = 0 extends 1 & T
+  ? T
+  : T extends NotWrappable
+  ? T
+  : {
+      -readonly [K in keyof T]: DeepMutable<T[K]>;
+    };
 
-export type StoreSetter<T> =
-  | Partial<T>
-  | ((
-      prevState: T extends NotWrappable ? T : Store<DeepReadonly<T>>,
-      traversed?: (string | number)[]
-    ) => Partial<T | DeepReadonly<T>> | void);
+export type CustomPartial<T> = T extends readonly unknown[]
+  ? "0" extends keyof T
+    ? { [K in Extract<keyof T, `${number}`>]?: T[K] }
+    : { [x: number]: T[number] }
+  : Partial<T>;
+
+export type PickMutable<T> = {
+  [K in keyof T as (<U>() => U extends { [V in K]: T[V] } ? 1 : 2) extends <U>() => U extends {
+    -readonly [V in K]: T[V];
+  }
+    ? 1
+    : 2
+    ? K
+    : never]: T[K];
+};
+
 export type StorePathRange = { from?: number; to?: number; by?: number };
 
-export type ArrayFilterFn<T> = (
-  item: T extends any[] ? T[number] : never,
-  index: number
-) => boolean;
+export type ArrayFilterFn<T> = (item: T, index: number) => boolean;
 
-export type Part<T> = keyof T | Array<keyof T> | StorePathRange | ArrayFilterFn<T>; // changing this to "T extends any[] ? ArrayFilterFn<T> : never" results in depth limit errors
+export type StoreSetter<T, U extends PropertyKey[] = []> =
+  | T
+  | CustomPartial<T>
+  | ((prevState: T, traversed: U) => T | CustomPartial<T>);
 
-export type Next<T, K> = K extends keyof T
-  ? T[K]
-  : K extends Array<keyof T>
-  ? T[K[number]]
-  : T extends any[]
-  ? K extends StorePathRange
-    ? T[number]
-    : K extends ArrayFilterFn<T>
-    ? T[number]
-    : never
+export type Part<T, K extends KeyOf<T> = KeyOf<T>> =
+  | K
+  | ([K] extends [never] ? never : readonly K[])
+  | ([T] extends [readonly unknown[]] ? ArrayFilterFn<T[number]> | StorePathRange : never);
+
+// shortcut to avoid writing `Exclude<T, NotWrappable>` too many times
+type W<T> = Exclude<T, NotWrappable>;
+
+// specially handle keyof to avoid errors with arrays and any
+type KeyOf<T> = number extends keyof T // have to check this otherwise ts won't allow KeyOf<T> to index T
+  ? 0 extends 1 & T // if it's any just return keyof T
+    ? keyof T
+    : [T] extends [never]
+    ? never // keyof never is PropertyKey, which number extends. this must go before
+    : // checking [T] extends [readonly unknown[]] because never extends everything
+    [T] extends [readonly unknown[]]
+    ? number // it's an array or tuple; exclude the non-number properties
+    : keyof T // it's something which contains an index signature for strings or numbers
+  : keyof T;
+
+type MutableKeyOf<T> = KeyOf<T> & keyof PickMutable<T>;
+
+// rest must specify at least one (additional) key, followed by a StoreSetter if the key is mutable.
+type Rest<T, U extends PropertyKey[], K extends KeyOf<T> = KeyOf<T>> = [T] extends [never]
+  ? never
+  : K extends MutableKeyOf<T>
+  ? [Part<T, K>, ...RestSetterOrContinue<T[K], [K, ...U]>]
+  : K extends KeyOf<T>
+  ? [Part<T, K>, ...RestContinue<T[K], [K, ...U]>]
   : never;
 
-export interface SetStoreFunction<T> {
-  <Setter extends StoreSetter<T>>(...args: [Setter]): void;
-  <K1 extends Part<T>, Setter extends StoreSetter<Next<T, K1>>>(...args: [K1, Setter]): void;
-  <
-    K1 extends Part<T>,
-    K2 extends Part<Next<T, K1>>,
-    Setter extends StoreSetter<Next<Next<T, K1>, K2>>
-  >(
-    ...args: [K1, K2, Setter]
-  ): void;
-  <
-    K1 extends Part<T>,
-    K2 extends Part<Next<T, K1>>,
-    K3 extends Part<Next<Next<T, K1>, K2>>,
-    Setter extends StoreSetter<Next<Next<Next<T, K1>, K2>, K3>>
-  >(
-    ...args: [K1, K2, K3, Setter]
-  ): void;
-  <
-    K1 extends Part<T>,
-    K2 extends Part<Next<T, K1>>,
-    K3 extends Part<Next<Next<T, K1>, K2>>,
-    K4 extends Part<Next<Next<Next<T, K1>, K2>, K3>>,
-    Setter extends StoreSetter<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>>
-  >(
-    ...args: [K1, K2, K3, K4, Setter]
-  ): void;
-  <
-    K1 extends Part<T>,
-    K2 extends Part<Next<T, K1>>,
-    K3 extends Part<Next<Next<T, K1>, K2>>,
-    K4 extends Part<Next<Next<Next<T, K1>, K2>, K3>>,
-    K5 extends Part<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>>,
-    Setter extends StoreSetter<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>>
-  >(
-    ...args: [K1, K2, K3, K4, K5, Setter]
-  ): void;
-  <
-    K1 extends Part<T>,
-    K2 extends Part<Next<T, K1>>,
-    K3 extends Part<Next<Next<T, K1>, K2>>,
-    K4 extends Part<Next<Next<Next<T, K1>, K2>, K3>>,
-    K5 extends Part<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>>,
-    K6 extends Part<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>>,
-    Setter extends StoreSetter<Next<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>, K6>>
-  >(
-    ...args: [K1, K2, K3, K4, K5, K6, Setter]
-  ): void;
-  <
-    K1 extends Part<T>,
-    K2 extends Part<Next<T, K1>>,
-    K3 extends Part<Next<Next<T, K1>, K2>>,
-    K4 extends Part<Next<Next<Next<T, K1>, K2>, K3>>,
-    K5 extends Part<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>>,
-    K6 extends Part<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>>,
-    K7 extends Part<Next<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>, K6>>,
-    Setter extends StoreSetter<
-      Next<Next<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>, K6>, K7>
-    >
-  >(
-    ...args: [K1, K2, K3, K4, K5, K6, K7, Setter]
-  ): void;
+type RestContinue<T, U extends PropertyKey[]> = 0 extends 1 & T
+  ? [...Part<any>[], StoreSetter<any, PropertyKey[]>]
+  : Rest<W<T>, U>;
 
-  // and here we give up on being accurate after 8 args
+type RestSetterOrContinue<T, U extends PropertyKey[]> = [StoreSetter<T, U>] | RestContinue<T, U>;
+
+export interface SetStoreFunction<T> {
   <
-    K1 extends Part<T>,
-    K2 extends Part<Next<T, K1>>,
-    K3 extends Part<Next<Next<T, K1>, K2>>,
-    K4 extends Part<Next<Next<Next<T, K1>, K2>, K3>>,
-    K5 extends Part<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>>,
-    K6 extends Part<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>>,
-    K7 extends Part<Next<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>, K6>>,
-    K8 extends Part<Next<Next<Next<Next<Next<Next<Next<T, K1>, K2>, K3>, K4>, K5>, K6>, K7>>
+    K1 extends KeyOf<W<T>>,
+    K2 extends KeyOf<W<W<T>[K1]>>,
+    K3 extends KeyOf<W<W<W<T>[K1]>[K2]>>,
+    K4 extends KeyOf<W<W<W<W<T>[K1]>[K2]>[K3]>>,
+    K5 extends KeyOf<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>>,
+    K6 extends KeyOf<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>>,
+    K7 extends MutableKeyOf<W<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>[K6]>>
   >(
-    ...args: [K1, K2, K3, K4, K5, K6, K7, K8, ...(Part<any> | StoreSetter<any>)[]]
+    k1: Part<W<T>, K1>,
+    k2: Part<W<W<T>[K1]>, K2>,
+    k3: Part<W<W<W<T>[K1]>[K2]>, K3>,
+    k4: Part<W<W<W<W<T>[K1]>[K2]>[K3]>, K4>,
+    k5: Part<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>, K5>,
+    k6: Part<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>, K6>,
+    k7: Part<W<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>[K6]>, K7>,
+    setter: StoreSetter<
+      W<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>[K6]>[K7],
+      [K7, K6, K5, K4, K3, K2, K1]
+    >
+  ): void;
+  <
+    K1 extends KeyOf<W<T>>,
+    K2 extends KeyOf<W<W<T>[K1]>>,
+    K3 extends KeyOf<W<W<W<T>[K1]>[K2]>>,
+    K4 extends KeyOf<W<W<W<W<T>[K1]>[K2]>[K3]>>,
+    K5 extends KeyOf<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>>,
+    K6 extends MutableKeyOf<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>>
+  >(
+    k1: Part<W<T>, K1>,
+    k2: Part<W<W<T>[K1]>, K2>,
+    k3: Part<W<W<W<T>[K1]>[K2]>, K3>,
+    k4: Part<W<W<W<W<T>[K1]>[K2]>[K3]>, K4>,
+    k5: Part<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>, K5>,
+    k6: Part<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>, K6>,
+    setter: StoreSetter<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>[K6], [K6, K5, K4, K3, K2, K1]>
+  ): void;
+  <
+    K1 extends KeyOf<W<T>>,
+    K2 extends KeyOf<W<W<T>[K1]>>,
+    K3 extends KeyOf<W<W<W<T>[K1]>[K2]>>,
+    K4 extends KeyOf<W<W<W<W<T>[K1]>[K2]>[K3]>>,
+    K5 extends MutableKeyOf<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>>
+  >(
+    k1: Part<W<T>, K1>,
+    k2: Part<W<W<T>[K1]>, K2>,
+    k3: Part<W<W<W<T>[K1]>[K2]>, K3>,
+    k4: Part<W<W<W<W<T>[K1]>[K2]>[K3]>, K4>,
+    k5: Part<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>, K5>,
+    setter: StoreSetter<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5], [K5, K4, K3, K2, K1]>
+  ): void;
+  <
+    K1 extends KeyOf<W<T>>,
+    K2 extends KeyOf<W<W<T>[K1]>>,
+    K3 extends KeyOf<W<W<W<T>[K1]>[K2]>>,
+    K4 extends MutableKeyOf<W<W<W<W<T>[K1]>[K2]>[K3]>>
+  >(
+    k1: Part<W<T>, K1>,
+    k2: Part<W<W<T>[K1]>, K2>,
+    k3: Part<W<W<W<T>[K1]>[K2]>, K3>,
+    k4: Part<W<W<W<W<T>[K1]>[K2]>[K3]>, K4>,
+    setter: StoreSetter<W<W<W<W<T>[K1]>[K2]>[K3]>[K4], [K4, K3, K2, K1]>
+  ): void;
+  <
+    K1 extends KeyOf<W<T>>,
+    K2 extends KeyOf<W<W<T>[K1]>>,
+    K3 extends MutableKeyOf<W<W<W<T>[K1]>[K2]>>
+  >(
+    k1: Part<W<T>, K1>,
+    k2: Part<W<W<T>[K1]>, K2>,
+    k3: Part<W<W<W<T>[K1]>[K2]>, K3>,
+    setter: StoreSetter<W<W<W<T>[K1]>[K2]>[K3], [K3, K2, K1]>
+  ): void;
+  <K1 extends KeyOf<W<T>>, K2 extends MutableKeyOf<W<W<T>[K1]>>>(
+    k1: Part<W<T>, K1>,
+    k2: Part<W<W<T>[K1]>, K2>,
+    setter: StoreSetter<W<W<T>[K1]>[K2], [K2, K1]>
+  ): void;
+  <K1 extends MutableKeyOf<W<T>>>(k1: Part<W<T>, K1>, setter: StoreSetter<W<T>[K1], [K1]>): void;
+  (setter: StoreSetter<T, []>): void;
+  // fallback
+  <
+    K1 extends KeyOf<W<T>>,
+    K2 extends KeyOf<W<W<T>[K1]>>,
+    K3 extends KeyOf<W<W<W<T>[K1]>[K2]>>,
+    K4 extends KeyOf<W<W<W<W<T>[K1]>[K2]>[K3]>>,
+    K5 extends KeyOf<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>>,
+    K6 extends KeyOf<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>>,
+    K7 extends KeyOf<W<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>[K6]>>
+  >(
+    k1: Part<W<T>, K1>,
+    k2: Part<W<W<T>[K1]>, K2>,
+    k3: Part<W<W<W<T>[K1]>[K2]>, K3>,
+    k4: Part<W<W<W<W<T>[K1]>[K2]>[K3]>, K4>,
+    k5: Part<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>, K5>,
+    k6: Part<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>, K6>,
+    k7: Part<W<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>[K6]>, K7>,
+    ...rest: Rest<W<W<W<W<W<W<W<T>[K1]>[K2]>[K3]>[K4]>[K5]>[K6]>[K7], [K7, K6, K5, K4, K3, K2, K1]>
   ): void;
 }
 
-export function createStore<T extends StoreNode>(
-  store: T | Store<T>,
-  options?: { name?: string }
+/**
+ * creates a reactive store that can be read through a proxy object and written with a setter function
+ *
+ * @description https://www.solidjs.com/docs/latest/api#createstore
+ */
+export function createStore<T extends object = {}>(
+  ...[store, options]: {} extends T
+    ? [store?: T | Store<T>, options?: { name?: string }]
+    : [store: T | Store<T>, options?: { name?: string }]
 ): [get: Store<T>, set: SetStoreFunction<T>] {
-  const unwrappedStore = unwrap<T>(store || {});
-  const wrappedStore = wrap(
-    unwrappedStore,
-    "_SOLID_DEV_" && ((options && options.name) || DEV.hashValue(unwrappedStore))
-  );
-  if ("_SOLID_DEV_") {
-    const name = (options && options.name) || DEV.hashValue(unwrappedStore);
-    DEV.registerGraph(name, { value: unwrappedStore });
-  }
+  const unwrappedStore = unwrap((store || {}) as T);
+  const isArray = Array.isArray(unwrappedStore);
+  if ("_SOLID_DEV_" && typeof unwrappedStore !== "object" && typeof unwrappedStore !== "function")
+    throw new Error(
+      `Unexpected type ${typeof unwrappedStore} received when initializing 'createStore'. Expected an object.`
+    );
+  const wrappedStore = wrap(unwrappedStore);
+  if ("_SOLID_DEV_") DEV!.registerGraph({ value: unwrappedStore, name: options && options.name });
   function setStore(...args: any[]): void {
-    batch(() => updatePath(unwrappedStore, args));
+    batch(() => {
+      isArray && args.length === 1
+        ? updateArray(unwrappedStore, args[0])
+        : updatePath(unwrappedStore, args);
+    });
   }
 
   return [wrappedStore, setStore];

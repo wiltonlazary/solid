@@ -1,4 +1,8 @@
-/* @jsxImportSource solid-js */
+/**
+ * @jsxImportSource solid-js
+ * @vitest-environment jsdom
+ */
+
 import { createRoot, createSignal } from "../../src";
 import { insert, Index } from "../src";
 
@@ -11,7 +15,7 @@ describe("Testing an only child each control flow", () => {
   const [list, setList] = createSignal([n1, n2, n3, n4]);
   const Component = () => (
     <div ref={div}>
-      <Index each={list()}>{item => item}</Index>
+      <Index each={list()}>{item => <>{item()}</>}</Index>
     </div>
   );
 
@@ -94,7 +98,7 @@ describe("Testing an multi child each control flow", () => {
     n3 = "c",
     n4 = "d";
   const [list, setList] = createSignal([n1, n2, n3, n4]);
-  const Component = () => <Index each={list()}>{item => item}</Index>;
+  const Component = () => <Index each={list()}>{item => <>{item()}</>}</Index>;
   let disposer: () => void;
 
   function apply(array: string[]) {
@@ -268,7 +272,14 @@ describe("Testing an only child each control flow with array children", () => {
   const [list, setList] = createSignal([n1, n2, n3, n4]);
   const Component = () => (
     <div ref={div}>
-      <Index each={list()}>{item => [item, item]}</Index>
+      <Index each={list()}>
+        {item => (
+          <>
+            {item()}
+            {item()}
+          </>
+        )}
+      </Index>
     </div>
   );
 
@@ -353,7 +364,7 @@ describe("Testing each control flow with fallback", () => {
   const Component = () => (
     <div ref={div}>
       <Index each={list()} fallback={"Empty"}>
-        {item => item}
+        {item => <>{item()}</>}
       </Index>
     </div>
   );

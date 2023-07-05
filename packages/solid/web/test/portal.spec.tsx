@@ -1,8 +1,10 @@
-/* @jsxImportSource solid-js */
+/**
+ * @jsxImportSource solid-js
+ * @vitest-environment jsdom
+ */
+
 import { createSignal } from "../../src";
 import { render, clearDelegatedEvents, Portal, Show } from "../src";
-
-global.queueMicrotask = setImmediate;
 
 describe("Testing a simple Portal", () => {
   let div = document.createElement("div"),
@@ -14,7 +16,7 @@ describe("Testing a simple Portal", () => {
     disposer = render(Component, div);
     expect(div.innerHTML).toBe("");
     expect((testMount.firstChild as HTMLDivElement).innerHTML).toBe("Hi");
-    expect((testMount.firstChild as HTMLDivElement & { host: HTMLElement }).host).toBe(div);
+    expect((testMount.firstChild as HTMLDivElement & { _$host: HTMLElement })._$host).toBe(div);
   });
 
   test("dispose", () => {
@@ -27,13 +29,17 @@ describe("Testing an SVG Portal", () => {
   let div = document.createElement("div"),
     disposer: () => void;
   const testMount = document.createElement("svg");
-  const Component = () => <Portal mount={testMount} isSVG={true}>Hi</Portal>;
+  const Component = () => (
+    <Portal mount={testMount} isSVG={true}>
+      Hi
+    </Portal>
+  );
 
   test("Create portal control flow", () => {
     disposer = render(Component, div);
     expect(div.innerHTML).toBe("");
     expect((testMount.firstChild as SVGGElement).innerHTML).toBe("Hi");
-    expect((testMount.firstChild as SVGGElement & { host: SVGElement }).host).toBe(div);
+    expect((testMount.firstChild as SVGGElement & { _$host: SVGElement })._$host).toBe(div);
   });
 
   test("dispose", () => disposer());
@@ -104,6 +110,30 @@ describe("Testing a Portal with Synthetic Events", () => {
     expect(clicked).toBe(false);
     testElem.click();
     expect(clicked).toBe(false);
+  });
+
+  test("dispose", () => disposer());
+});
+
+describe("Testing a Portal with direct reactive children", () => {
+  let div = document.createElement("div"),
+    disposer: () => void,
+    [count, setCount] = createSignal(0),
+    portalElem: HTMLDivElement;
+  const Component = () => <Portal ref={portalElem}>{count()}</Portal>;
+
+  test("Create portal control flow", () => {
+    disposer = render(Component, div);
+    expect(div.innerHTML).toBe("");
+    expect(document.body.firstChild).toBe(portalElem);
+  });
+
+  test("Click to trigger reactive update", () => {
+    expect(portalElem.innerHTML).toBe("0");
+    setCount(count() + 1);
+    expect(portalElem.innerHTML).toBe("1");
+    setCount(count() + 1);
+    expect(portalElem.innerHTML).toBe("2");
   });
 
   test("dispose", () => disposer());

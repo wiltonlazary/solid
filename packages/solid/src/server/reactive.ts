@@ -1,29 +1,71 @@
-import type { JSX } from "../jsx";
+import type { JSX } from "../jsx.js";
+
 export const equalFn = <T>(a: T, b: T) => a === b;
 export const $PROXY = Symbol("solid-proxy");
-export const DEV = {};
-const ERROR = Symbol("error");
+export const $TRACK = Symbol("solid-track");
+export const $DEVCOMP = Symbol("solid-dev-component");
+export const DEV = undefined;
 
-const UNOWNED: Owner = { context: null, owner: null };
+export type Accessor<T> = () => T;
+export type Setter<T> = undefined extends T
+  ? <U extends T>(value?: (U extends Function ? never : U) | ((prev?: T) => U)) => U
+  : <U extends T>(value: (U extends Function ? never : U) | ((prev: T) => U)) => U;
+export type Signal<T> = [get: Accessor<T>, set: Setter<T>];
+
+const ERROR = Symbol("error");
+export function castError(err: unknown): Error {
+  if (err instanceof Error) return err;
+  return new Error(typeof err === "string" ? err : "Unknown error", { cause: err });
+}
+
+function handleError(err: unknown, owner = Owner): void {
+  const fns = lookup(owner, ERROR);
+  const error = castError(err);
+  if (!fns) throw error;
+
+  try {
+    for (const f of fns) f(error);
+  } catch (e) {
+    handleError(e, owner?.owner || null);
+  }
+}
+
+const UNOWNED: Owner = { context: null, owner: null, owned: null, cleanups: null };
 export let Owner: Owner | null = null;
 
 interface Owner {
   owner: Owner | null;
   context: any | null;
+  owned: Owner[] | null;
+  cleanups: (() => void)[] | null;
 }
 
-export function createRoot<T>(fn: (dispose: () => void) => T, detachedOwner?: Owner): T {
-  detachedOwner && (Owner = detachedOwner);
+export function createOwner(): Owner {
+  const o = { owner: Owner, context: null, owned: null, cleanups: null };
+  if (Owner) {
+    if (!Owner.owned) Owner.owned = [o];
+    else Owner.owned.push(o);
+  }
+  return o;
+}
+
+export function createRoot<T>(fn: (dispose: () => void) => T, detachedOwner?: typeof Owner): T {
   const owner = Owner,
-    root: Owner = fn.length === 0 ? UNOWNED : { context: null, owner };
+    root =
+      fn.length === 0
+        ? UNOWNED
+        : {
+            context: null,
+            owner: detachedOwner === undefined ? owner : detachedOwner,
+            owned: null,
+            cleanups: null
+          };
   Owner = root;
   let result: T;
   try {
-    result = fn(() => {});
+    result = fn(fn.length === 0 ? () => {} : () => cleanNode(root));
   } catch (err) {
-    const fns = lookup(Owner, ERROR);
-    if (!fns) throw err;
-    fns.forEach((f: (err: any) => void) => f(err));
+    handleError(err);
   } finally {
     Owner = owner;
   }
@@ -43,19 +85,36 @@ export function createSignal<T>(
 }
 
 export function createComputed<T>(fn: (v?: T) => T, value?: T): void {
-  Owner = { owner: Owner, context: null };
-  fn(value);
-  Owner = Owner.owner;
+  Owner = createOwner();
+  try {
+    fn(value);
+  } catch (err) {
+    handleError(err);
+  } finally {
+    Owner = Owner.owner;
+  }
 }
 
 export const createRenderEffect = createComputed;
 
 export function createEffect<T>(fn: (v?: T) => T, value?: T): void {}
 
+export function createReaction(fn: () => void) {
+  return (fn: () => void) => {
+    fn();
+  };
+}
+
 export function createMemo<T>(fn: (v?: T) => T, value?: T): () => T {
-  Owner = { owner: Owner, context: null };
-  const v = fn(value);
-  Owner = Owner.owner;
+  Owner = createOwner();
+  let v: T;
+  try {
+    v = fn(value);
+  } catch (err) {
+    handleError(err);
+  } finally {
+    Owner = Owner.owner;
+  }
   return () => v;
 }
 
@@ -63,7 +122,7 @@ export function createDeferred<T>(source: () => T) {
   return source;
 }
 
-export function createSelector<T>(source: () => T, fn: (k: T, value: T) => boolean) {
+export function createSelector<T>(source: () => T, fn: (k: T, value: T) => boolean = equalFn) {
   return (k: T) => fn(k, source());
 }
 
@@ -93,15 +152,45 @@ export function on<T, U>(
 
 export function onMount(fn: () => void) {}
 
-export function onCleanup(fn: () => void) {}
+export function onCleanup(fn: () => void) {
+  if (Owner) {
+    if (!Owner.cleanups) Owner.cleanups = [fn];
+    else Owner.cleanups.push(fn);
+  }
+  return fn;
+}
 
-export function onError(fn: (err: any) => void): void {
-  if (Owner === null)
-    "_SOLID_DEV_" &&
-      console.warn("error handlers created outside a `createRoot` or `render` will never be run");
-  else if (Owner.context === null) Owner.context = { [ERROR]: [fn] };
-  else if (!Owner.context[ERROR]) Owner.context[ERROR] = [fn];
-  else Owner.context[ERROR].push(fn);
+export function cleanNode(node: Owner) {
+  if (node.owned) {
+    for (let i = 0; i < node.owned.length; i++) cleanNode(node.owned[i]);
+    node.owned = null;
+  }
+  if (node.cleanups) {
+    for (let i = 0; i < node.cleanups.length; i++) node.cleanups[i]();
+    node.cleanups = null;
+  }
+}
+
+export function catchError<T>(fn: () => T, handler: (err: Error) => void) {
+  Owner = { owner: Owner, context: { [ERROR]: [handler] }, owned: null, cleanups: null };
+  try {
+    return fn();
+  } catch (err) {
+    handleError(err);
+  } finally {
+    Owner = Owner!.owner;
+  }
+}
+
+/**
+ * @deprecated since version 1.7.0 and will be removed in next major - use catchError instead
+ */
+export function onError(fn: (err: Error) => void): void {
+  if (Owner) {
+    if (Owner.context === null) Owner.context = { [ERROR]: [fn] };
+    else if (!Owner.context[ERROR]) Owner.context[ERROR] = [fn];
+    else Owner.context[ERROR].push(fn);
+  }
 }
 
 export function getListener() {
@@ -121,31 +210,42 @@ export function createContext<T>(defaultValue?: T): Context<T> {
 }
 
 export function useContext<T>(context: Context<T>): T {
-  return lookup(Owner, context.id) || context.defaultValue;
+  let ctx;
+  return (ctx = lookup(Owner, context.id)) !== undefined ? ctx : context.defaultValue;
 }
 
 export function getOwner() {
   return Owner;
 }
 
-export function children(fn: () => any) {
-  return createMemo(() => resolveChildren(fn()));
+type ChildrenReturn = Accessor<any> & { toArray: () => any[] };
+export function children(fn: () => any): ChildrenReturn {
+  const memo = createMemo(() => resolveChildren(fn()));
+  (memo as ChildrenReturn).toArray = () => {
+    const c = memo();
+    return Array.isArray(c) ? c : c != null ? [c] : [];
+  };
+  return memo as ChildrenReturn;
 }
 
-export function runWithOwner(o: Owner, fn: () => any) {
+export function runWithOwner<T>(o: typeof Owner, fn: () => T): T | undefined {
   const prev = Owner;
   Owner = o;
   try {
     return fn();
+  } catch (err) {
+    handleError(err);
   } finally {
     Owner = prev;
   }
 }
 
 export function lookup(owner: Owner | null, key: symbol | string): any {
-  return (
-    owner && ((owner.context && owner.context[key]) || (owner.owner && lookup(owner.owner, key)))
-  );
+  return owner
+    ? owner.context && owner.context[key] !== undefined
+      ? owner.context[key]
+      : lookup(owner.owner, key)
+    : undefined;
 }
 
 function resolveChildren(children: any): unknown {
@@ -163,10 +263,10 @@ function resolveChildren(children: any): unknown {
 
 function createProvider(id: symbol) {
   return function provider(props: { value: unknown; children: any }) {
-    return createMemo(() => {
+    return createMemo<JSX.Element>(() => {
       Owner!.context = { [id]: props.value };
-      return children(() => props.children);
-    }) as unknown as JSX.Element;
+      return children(() => props.children) as unknown as JSX.Element;
+    });
   };
 }
 
@@ -193,3 +293,75 @@ export function mapArray<T, U>(
   } else if (options.fallback) s = [options.fallback()];
   return () => s;
 }
+
+function getSymbol() {
+  const SymbolCopy = Symbol as any;
+  return SymbolCopy.observable || "@@observable";
+}
+
+export type ObservableObserver<T> =
+  | ((v: T) => void)
+  | {
+      next: (v: T) => void;
+      error?: (v: any) => void;
+      complete?: (v: boolean) => void;
+    };
+export function observable<T>(input: Accessor<T>) {
+  return {
+    subscribe(observer: ObservableObserver<T>) {
+      if (!(observer instanceof Object) || observer == null) {
+        throw new TypeError("Expected the observer to be an object.");
+      }
+
+      const handler =
+        typeof observer === "function" ? observer : observer.next && observer.next.bind(observer);
+
+      if (!handler) {
+        return { unsubscribe() {} };
+      }
+
+      const dispose = createRoot(disposer => {
+        createEffect(() => {
+          const v = input();
+          untrack(() => handler(v));
+        });
+
+        return disposer;
+      });
+
+      if (getOwner()) onCleanup(dispose);
+
+      return {
+        unsubscribe() {
+          dispose();
+        }
+      };
+    },
+    [Symbol.observable || "@@observable"]() {
+      return this;
+    }
+  };
+}
+
+export function from<T>(
+  producer:
+    | ((setter: Setter<T>) => () => void)
+    | {
+        subscribe: (fn: (v: T) => void) => (() => void) | { unsubscribe: () => void };
+      }
+): Accessor<T> {
+  const [s, set] = createSignal<T | undefined>(undefined, { equals: false }) as [
+    Accessor<T>,
+    Setter<T>
+  ];
+  if ("subscribe" in producer) {
+    const unsub = producer.subscribe(v => set(() => v));
+    onCleanup(() => ("unsubscribe" in unsub ? unsub.unsubscribe() : unsub()));
+  } else {
+    const clean = producer(set);
+    onCleanup(clean);
+  }
+  return s;
+}
+
+export function enableExternalSource(factory: any) {}

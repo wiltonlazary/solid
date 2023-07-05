@@ -1,5 +1,12 @@
-import { createHyperScript } from "hyper-dom-expressions";
-import { spread, assign, insert, createComponent, dynamicProperty, SVGElements } from "solid-js/web";
+import { createHyperScript } from "./hyperscript";
+import {
+  spread,
+  assign,
+  insert,
+  createComponent,
+  dynamicProperty,
+  SVGElements
+} from "solid-js/web";
 
 export default createHyperScript({
   spread,
