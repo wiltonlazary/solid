@@ -47,7 +47,10 @@ const NO_INIT = {};
 export var Owner: Owner | null = null;
 export let Transition: TransitionState | null = null;
 let Scheduler: ((fn: () => void) => any) | null = null;
-let ExternalSourceFactory: ExternalSourceFactory | null = null;
+let ExternalSourceConfig: {
+  factory: ExternalSourceFactory;
+  untrack: <V>(fn: () => V) => V;
+} | null = null;
 let Listener: Computation<any> | null = null;
 let Updates: Computation<any>[] | null = null;
 let Effects: Computation<any>[] | null = null;
@@ -57,13 +60,12 @@ let ExecCount = 0;
 export const DevHooks: {
   afterUpdate: (() => void) | null;
   afterCreateOwner: ((owner: Owner) => void) | null;
+  afterCreateSignal: ((signal: SignalState<any>) => void) | null;
 } = {
   afterUpdate: null,
-  afterCreateOwner: null
+  afterCreateOwner: null,
+  afterCreateSignal: null
 };
-
-// keep immediately evaluated module code, below its indirect declared let dependencies like Listener
-const [transPending, setTransPending] = /*@__PURE__*/ createSignal(false);
 
 export type ComputationState = 0 | 1 | 2;
 
@@ -140,6 +142,7 @@ export function createRoot<T>(fn: RootFunction<T>, detachedOwner?: typeof Owner)
   const listener = Listener,
     owner = Owner,
     unowned = fn.length === 0,
+    current = detachedOwner === undefined ? owner : detachedOwner,
     root: Owner = unowned
       ? "_SOLID_DEV_"
         ? { owned: null, cleanups: null, context: null, owner: null }
@@ -147,8 +150,8 @@ export function createRoot<T>(fn: RootFunction<T>, detachedOwner?: typeof Owner)
       : {
           owned: null,
           cleanups: null,
-          context: null,
-          owner: detachedOwner === undefined ? owner : detachedOwner
+          context: current ? current.context : null,
+          owner: current
         },
     updateFn = unowned
       ? "_SOLID_DEV_"
@@ -174,10 +177,14 @@ export function createRoot<T>(fn: RootFunction<T>, detachedOwner?: typeof Owner)
 
 export type Accessor<T> = () => T;
 
-export type Setter<T> = (undefined extends T ? () => undefined : {}) &
-  (<U extends T>(value: (prev: T) => U) => U) &
-  (<U extends T>(value: Exclude<U, Function>) => U) &
-  (<U extends T>(value: Exclude<U, Function> | ((prev: T) => U)) => U);
+export type Setter<in out T> = {
+  <U extends T>(...args: undefined extends T ? [] : [value: (prev: T) => U]): undefined extends T
+    ? undefined
+    : U;
+  <U extends T>(value: (prev: T) => U): U;
+  <U extends T>(value: Exclude<U, Function>): U;
+  <U extends T>(value: Exclude<U, Function> | ((prev: T) => U)): U;
+};
 
 export type Signal<T> = [get: Accessor<T>, set: Setter<T>];
 
@@ -223,9 +230,10 @@ export function createSignal<T>(
     comparator: options.equals || undefined
   };
 
-  if ("_SOLID_DEV_" && !options.internal) {
+  if ("_SOLID_DEV_") {
     if (options.name) s.name = options.name;
-    registerGraph(s);
+    if (DevHooks.afterCreateSignal) DevHooks.afterCreateSignal(s);
+    if (!options.internal) registerGraph(s);
   }
 
   const setter: Setter<T | undefined> = (value?: unknown) => {
@@ -343,7 +351,7 @@ export function createEffect<Next, Init>(
 ): void {
   runEffects = runUserEffects;
   const c = createComputation(fn, value!, false, STALE, "_SOLID_DEV_" ? options : undefined),
-    s = SuspenseContext && lookup(Owner, SuspenseContext.id);
+    s = SuspenseContext && useContext(SuspenseContext);
   if (s) c.suspense = s;
   if (!options || !options.render) c.user = true;
   Effects ? Effects.push(c) : updateComputation(c);
@@ -374,7 +382,7 @@ export function createReaction(onInvalidate: () => void, options?: EffectOptions
       0,
       "_SOLID_DEV_" ? options : undefined
     ),
-    s = SuspenseContext && lookup(Owner, SuspenseContext.id);
+    s = SuspenseContext && useContext(SuspenseContext);
   if (s) c.suspense = s;
   c.user = true;
   return (tracking: () => void) => {
@@ -524,6 +532,10 @@ export type InitializedResourceReturn<T, R = unknown> = [
   ResourceActions<T, R>
 ];
 
+function isPromise(v: any): v is Promise<any> {
+  return v && typeof v === "object" && "then" in v;
+}
+
 /**
  * Creates a resource that wraps a repeated promise in a reactive pattern:
  * ```typescript
@@ -611,7 +623,7 @@ export function createResource<T, S, R>(
     id = `${sharedConfig.context.id}${sharedConfig.context.count++}`;
     let v;
     if (options.ssrLoadFrom === "initial") initP = options.initialValue as T;
-    else if (sharedConfig.load && (v = sharedConfig.load(id))) initP = v[0];
+    else if (sharedConfig.load && (v = sharedConfig.load(id))) initP = v;
   }
   function loadEnd(p: Promise<T> | null, v: T | undefined, error?: any, key?: S) {
     if (pr === p) {
@@ -642,7 +654,7 @@ export function createResource<T, S, R>(
   }
 
   function read() {
-    const c = SuspenseContext && lookup(Owner, SuspenseContext.id),
+    const c = SuspenseContext && useContext(SuspenseContext),
       v = value(),
       err = error();
     if (err !== undefined && !pr) throw err;
@@ -652,7 +664,7 @@ export function createResource<T, S, R>(
         if (pr) {
           if (c.resolved && Transition && loadedUnderTransition) Transition.promises.add(pr);
           else if (!contexts.has(c)) {
-            c.increment();
+            c.increment!();
             contexts.add(c);
           }
         }
@@ -679,11 +691,16 @@ export function createResource<T, S, R>(
               refetching
             })
           );
-    if (typeof p !== "object" || !(p && "then" in p)) {
+    if (!isPromise(p)) {
       loadEnd(pr, p, undefined, lookup);
       return p;
     }
     pr = p;
+    if ("value" in p) {
+      if ((p as any).status === "success") loadEnd(pr, p.value as T, undefined, lookup);
+      else loadEnd(pr, undefined, undefined, lookup);
+      return p;
+    }
     scheduled = true;
     queueMicrotask(() => (scheduled = false));
     runUpdates(() => {
@@ -751,10 +768,15 @@ export function createDeferred<T>(source: Accessor<T>, options?: DeferredOptions
     },
     undefined,
     true
+  ) as Memo<any>;
+  const [deferred, setDeferred] = createSignal(
+    Transition && Transition.running && Transition.sources.has(node) ? node.tValue : node.value,
+    options
   );
-  const [deferred, setDeferred] = createSignal(node.value as T, options);
   updateComputation(node);
-  setDeferred(() => node.value as T);
+  setDeferred(() =>
+    Transition && Transition.running && Transition.sources.has(node) ? node.tValue : node.value
+  );
   return deferred;
 }
 
@@ -846,11 +868,12 @@ export function batch<T>(fn: Accessor<T>): T {
  * @description https://www.solidjs.com/docs/latest/api#untrack
  */
 export function untrack<T>(fn: Accessor<T>): T {
-  if (Listener === null) return fn();
+  if (!ExternalSourceConfig && Listener === null) return fn();
 
   const listener = Listener;
   Listener = null;
   try {
+    if (ExternalSourceConfig) return ExternalSourceConfig.untrack(fn);
     return fn();
   } finally {
     Listener = listener;
@@ -912,7 +935,7 @@ export function on<S, Next extends Prev, Prev = Next>(
 export function on<S, Next extends Prev, Prev = Next>(
   deps: AccessorArray<S> | Accessor<S>,
   fn: OnEffectFunction<S, undefined | NoInfer<Prev>, Next>,
-  options: OnOptions & { defer: true }
+  options: OnOptions | { defer: true }
 ): EffectFunction<undefined | NoInfer<Next>>;
 export function on<S, Next extends Prev, Prev = Next>(
   deps: AccessorArray<S> | Accessor<S>,
@@ -977,7 +1000,7 @@ export function onCleanup<T extends () => any>(fn: T): T {
 export function catchError<T>(fn: () => T, handler: (err: Error) => void) {
   ERROR || (ERROR = Symbol("error"));
   Owner = createComputation(undefined!, undefined, true);
-  Owner.context = { [ERROR]: [handler] };
+  Owner.context = { ...Owner.context, [ERROR]: [handler] };
   if (Transition && Transition.running) Transition.sources.add(Owner as Memo<any>);
   try {
     return fn();
@@ -986,25 +1009,6 @@ export function catchError<T>(fn: () => T, handler: (err: Error) => void) {
   } finally {
     Owner = Owner.owner;
   }
-}
-
-/**
- * @deprecated since version 1.7.0 and will be removed in next major - use catchError instead
- * onError - run an effect whenever an error is thrown within the context of the child scopes
- * @param fn an error handler that receives the error
- *
- * * If the error is thrown again inside the error handler, it will trigger the next available parent handler
- *
- * @description https://www.solidjs.com/docs/latest/api#onerror
- */
-export function onError(fn: (err: Error) => void): void {
-  ERROR || (ERROR = Symbol("error"));
-  if (Owner === null)
-    "_SOLID_DEV_" &&
-      console.warn("error handlers created outside a `createRoot` or `render` will never be run");
-  else if (Owner.context === null) Owner.context = { [ERROR]: [fn] };
-  else if (!Owner.context[ERROR]) Owner.context[ERROR] = [fn];
-  else Owner.context[ERROR].push(fn);
 }
 
 export function getListener() {
@@ -1071,6 +1075,9 @@ export function startTransition(fn: () => unknown): Promise<void> {
     return t ? t.done : undefined;
   });
 }
+
+// keep immediately evaluated module code, below its dependencies like Listener & createSignal
+const [transPending, setTransPending] = /*@__PURE__*/ createSignal(false);
 
 export type Transition = [Accessor<boolean>, (fn: () => void) => Promise<void>];
 
@@ -1177,8 +1184,9 @@ export function createContext<T>(
  * @description https://www.solidjs.com/docs/latest/api#usecontext
  */
 export function useContext<T>(context: Context<T>): T {
-  let ctx;
-  return (ctx = lookup(Owner, context.id)) !== undefined ? ctx : context.defaultValue;
+  return Owner && Owner.context && Owner.context[context.id] !== undefined
+    ? Owner.context[context.id]
+    : context.defaultValue;
 }
 
 export type ResolvedJSXElement = Exclude<JSX.Element, JSX.ArrayElement>;
@@ -1214,7 +1222,7 @@ export type SuspenseContextType = {
   resolved?: boolean;
 };
 
-type SuspenseContext = Context<SuspenseContextType> & {
+type SuspenseContext = Context<SuspenseContextType | undefined> & {
   active?(): boolean;
   increment?(): void;
   decrement?(): void;
@@ -1223,26 +1231,32 @@ type SuspenseContext = Context<SuspenseContextType> & {
 let SuspenseContext: SuspenseContext;
 
 export function getSuspenseContext() {
-  return SuspenseContext || (SuspenseContext = createContext<SuspenseContextType>({}));
+  return SuspenseContext || (SuspenseContext = createContext<SuspenseContextType | undefined>());
 }
 
 // Interop
-export function enableExternalSource(factory: ExternalSourceFactory) {
-  if (ExternalSourceFactory) {
-    const oldFactory = ExternalSourceFactory;
-    ExternalSourceFactory = (fn, trigger) => {
-      const oldSource = oldFactory(fn, trigger);
-      const source = factory(x => oldSource.track(x), trigger);
-      return {
-        track: x => source.track(x),
-        dispose() {
-          source.dispose();
-          oldSource.dispose();
-        }
-      };
+export function enableExternalSource(
+  factory: ExternalSourceFactory,
+  untrack: <V>(fn: () => V) => V = fn => fn()
+) {
+  if (ExternalSourceConfig) {
+    const { factory: oldFactory, untrack: oldUntrack } = ExternalSourceConfig;
+    ExternalSourceConfig = {
+      factory: (fn, trigger) => {
+        const oldSource = oldFactory(fn, trigger);
+        const source = factory(x => oldSource.track(x), trigger);
+        return {
+          track: x => source.track(x),
+          dispose() {
+            source.dispose();
+            oldSource.dispose();
+          }
+        };
+      },
+      untrack: fn => oldUntrack(() => untrack(fn))
     };
   } else {
-    ExternalSourceFactory = factory;
+    ExternalSourceConfig = { factory, untrack };
   }
 }
 
@@ -1323,10 +1337,7 @@ export function writeSignal(node: SignalState<any> | Memo<any>, value: any, isCo
 function updateComputation(node: Computation<any>) {
   if (!node.fn) return;
   cleanNode(node);
-  const owner = Owner,
-    listener = Listener,
-    time = ExecCount;
-  Listener = Owner = node;
+  const time = ExecCount;
   runComputation(
     node,
     Transition && Transition.running && Transition.sources.has(node as Memo<any>)
@@ -1345,12 +1356,13 @@ function updateComputation(node: Computation<any>) {
       }, false);
     });
   }
-  Listener = listener;
-  Owner = owner;
 }
 
 function runComputation(node: Computation<any>, value: any, time: number) {
   let nextValue;
+  const owner = Owner,
+    listener = Listener;
+  Listener = Owner = node;
   try {
     nextValue = node.fn(value);
   } catch (err) {
@@ -1368,6 +1380,9 @@ function runComputation(node: Computation<any>, value: any, time: number) {
     // won't be picked up until next update
     node.updatedAt = time + 1;
     return handleError(err);
+  } finally {
+    Listener = listener;
+    Owner = owner;
   }
   if (!node.updatedAt || node.updatedAt <= time) {
     if (node.updatedAt != null && "observers" in node) {
@@ -1397,7 +1412,7 @@ function createComputation<Next, Init = unknown>(
     cleanups: null,
     value: init,
     owner: Owner,
-    context: null,
+    context: Owner ? Owner.context : null,
     pure
   };
 
@@ -1423,13 +1438,13 @@ function createComputation<Next, Init = unknown>(
 
   if ("_SOLID_DEV_" && options && options.name) c.name = options.name;
 
-  if (ExternalSourceFactory) {
+  if (ExternalSourceConfig && c.fn) {
     const [track, trigger] = createSignal<void>(undefined, { equals: false });
-    const ordinary = ExternalSourceFactory(c.fn, trigger);
+    const ordinary = ExternalSourceConfig.factory(c.fn, trigger);
     onCleanup(() => ordinary.dispose());
     const triggerInTransition: () => void = () =>
       startTransition(trigger).then(() => inTransition.dispose());
-    const inTransition = ExternalSourceFactory(c.fn, triggerInTransition);
+    const inTransition = ExternalSourceConfig.factory(c.fn, triggerInTransition);
     c.fn = x => {
       track();
       return Transition && Transition.running ? inTransition.track(x) : ordinary.track(x);
@@ -1573,7 +1588,18 @@ function runUserEffects(queue: Computation<any>[]) {
     if (!e.user) runTop(e);
     else queue[userLength++] = e;
   }
-  if (sharedConfig.context) setHydrateContext();
+  if (sharedConfig.context) {
+    if (sharedConfig.count) {
+      sharedConfig.effects || (sharedConfig.effects = []);
+      sharedConfig.effects.push(...queue.slice(0, userLength));
+      return;
+    } else if (sharedConfig.effects) {
+      queue = [...sharedConfig.effects, ...queue];
+      userLength += sharedConfig.effects.length;
+      delete sharedConfig.effects;
+    }
+    setHydrateContext();
+  }
   for (i = 0; i < userLength; i++) runTop(queue[i]);
 }
 
@@ -1644,7 +1670,6 @@ function cleanNode(node: Owner) {
   }
   if (Transition && Transition.running) (node as Computation<any>).tState = 0;
   else (node as Computation<any>).state = 0;
-  node.context = null;
   "_SOLID_DEV_" && delete node.sourceMap;
 }
 
@@ -1663,37 +1688,27 @@ function castError(err: unknown): Error {
   return new Error(typeof err === "string" ? err : "Unknown error", { cause: err });
 }
 
+function runErrors(err: unknown, fns: ((err: any) => void)[], owner: Owner | null) {
+  try {
+    for (const f of fns) f(err);
+  } catch (e) {
+    handleError(e, (owner && owner.owner) || null);
+  }
+}
+
 function handleError(err: unknown, owner = Owner) {
-  const fns = ERROR && lookup(owner, ERROR);
+  const fns = ERROR && owner && owner.context && owner.context[ERROR];
   const error = castError(err);
   if (!fns) throw error;
 
   if (Effects)
     Effects!.push({
       fn() {
-        try {
-          for (const f of fns) f(error);
-        } catch (e) {
-          handleError(e, owner?.owner || null);
-        }
+        runErrors(error, fns, owner);
       },
       state: STALE
     } as unknown as Computation<any>);
-  else {
-    try {
-      for (const f of fns) f(error);
-    } catch (e) {
-      handleError(e, owner?.owner || null);
-    }
-  }
-}
-
-function lookup(owner: Owner | null, key: symbol | string): any {
-  return owner
-    ? owner.context && owner.context[key] !== undefined
-      ? owner.context[key]
-      : lookup(owner.owner, key)
-    : undefined;
+  else runErrors(error, fns, owner);
 }
 
 function resolveChildren(children: JSX.Element | Accessor<any>): ResolvedChildren {
@@ -1715,7 +1730,7 @@ function createProvider(id: symbol, options?: EffectOptions) {
     createRenderEffect(
       () =>
         (res = untrack(() => {
-          Owner!.context = { [id]: props.value };
+          Owner!.context = { ...Owner!.context, [id]: props.value };
           return children(() => props.children);
         })),
       undefined,
@@ -1726,3 +1741,39 @@ function createProvider(id: symbol, options?: EffectOptions) {
 }
 
 type TODO = any;
+
+/**
+ * @deprecated since version 1.7.0 and will be removed in next major - use catchError instead
+ * onError - run an effect whenever an error is thrown within the context of the child scopes
+ * @param fn an error handler that receives the error
+ *
+ * * If the error is thrown again inside the error handler, it will trigger the next available parent handler
+ *
+ * @description https://www.solidjs.com/docs/latest/api#onerror
+ */
+export function onError(fn: (err: Error) => void): void {
+  ERROR || (ERROR = Symbol("error"));
+  if (Owner === null)
+    "_SOLID_DEV_" &&
+      console.warn("error handlers created outside a `createRoot` or `render` will never be run");
+  else if (Owner.context === null || !Owner.context[ERROR]) {
+    // terrible de-opt
+    Owner.context = { ...Owner.context, [ERROR]: [fn] };
+    mutateContext(Owner, ERROR, [fn]);
+  } else Owner.context[ERROR].push(fn);
+}
+
+function mutateContext(o: Owner, key: symbol, value: any) {
+  if (o.owned) {
+    for (let i = 0; i < o.owned.length; i++) {
+      if (o.owned[i].context === o.context) mutateContext(o.owned[i], key, value);
+      if (!o.owned[i].context) {
+        o.owned[i].context = o.context;
+        mutateContext(o.owned[i], key, value);
+      } else if (!o.owned[i].context[key]) {
+        o.owned[i].context[key] = value;
+        mutateContext(o.owned[i], key, value);
+      }
+    }
+  }
+}

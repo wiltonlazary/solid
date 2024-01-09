@@ -33,6 +33,7 @@ const plugins = [
 const replaceDev = isDev =>
   replace({
     '"_SOLID_DEV_"': isDev,
+    '"_DX_DEV_"': isDev,
     preventAssignment: true,
     delimiters: ["", ""]
   });
@@ -153,7 +154,7 @@ export default [
         format: "es"
       }
     ],
-    external: ["solid-js", "stream", "seroval"],
+    external: ["solid-js", "stream", "seroval", "seroval-plugins/web"],
     plugins
   },
   {
@@ -170,6 +171,22 @@ export default [
     ],
     external: ["solid-js"],
     plugins: [replaceDev(true)].concat(plugins)
+  },
+  {
+    input: "web/storage/storage.ts",
+    output: [
+      {
+        file: "web/dist/storage.cjs",
+        format: "cjs",
+        exports: "auto"
+      },
+      {
+        file: "web/dist/storage.js",
+        format: "es"
+      }
+    ],
+    external: ["solid-js/web"],
+    plugins
   },
   {
     input: "universal/src/index.ts",

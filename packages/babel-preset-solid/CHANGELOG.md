@@ -1,5 +1,75 @@
 # babel-preset-solid
 
+## 1.8.9
+
+### Patch Changes
+
+- 80d4830f: fix #2016 value spread, smaller build output
+
+## 1.8.8
+
+### Patch Changes
+
+- 968e2cc9: update seroval, fix #1972, fix #1980, fix #2002, support partial ALS
+
+## 1.8.6
+
+### Patch Changes
+
+- 54e1aecf: update seroval, fix this, optimize star imports, fix #1952 hydration race condition
+
+## 1.8.4
+
+### Patch Changes
+
+- cf0542a4: fix #1927, fix #1929, fix #1931, update storage API
+
+## 1.8.2
+
+### Patch Changes
+
+- dd492c5e: fix #1917, fix #1918 error handling with serialization
+
+## 1.8.0
+
+### Minor Changes
+
+- 2c087cbb: update to seroval streaming serializer, change ssr markers
+- 2c087cbb: hydration perf improvement, fix #1849
+
+### Patch Changes
+
+- 2c087cbb: remove attribute quotes in template, batch serialization
+- 2c087cbb: improved serialization/guards, fix #1413, fix #1796 hydration with lazy
+
+## 1.8.0-beta.2
+
+### Minor Changes
+
+- e3a97d28: hydration perf improvement, fix #1849
+
+## 1.8.0-beta.1
+
+### Patch Changes
+
+- f6d511db: remove attribute quotes in template, batch serialization
+
+## 1.8.0-beta.0
+
+### Minor Changes
+
+- d8e0e8e8: update to seroval streaming serializer, change ssr markers
+
+### Patch Changes
+
+- bf09b838: improved serialization/guards, fix #1413, fix #1796 hydration with lazy
+
+## 1.7.12
+
+### Patch Changes
+
+- 10ac07af: update jsx types, iife compiler optimization
+
 ## 1.7.7
 
 ### Patch Changes

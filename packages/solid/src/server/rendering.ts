@@ -100,9 +100,10 @@ export function mergeProps(...sources: any): any {
           enumerable: true,
           get() {
             for (let i = sources.length - 1; i >= 0; i--) {
-              let s = sources[i] || {};
+              let v,
+                s = sources[i];
               if (typeof s === "function") s = s();
-              const v = s[key];
+              v = (s || {})[key];
               if (v !== undefined) return v;
             }
           }
@@ -264,7 +265,7 @@ export function ErrorBoundary(props: {
   const id = ctx.id + ctx.count;
   function displayFallback() {
     cleanNode(clean);
-    ctx.writeResource(id, error, true);
+    ctx.serialize(id, error);
     setHydrateContext({ ...ctx, count: 0 });
     const f = props.fallback;
     return typeof f === "function" && f.length ? f(error, () => {}) : f;
@@ -282,7 +283,7 @@ export function ErrorBoundary(props: {
   });
   if (error) return displayFallback();
   sync = false;
-  return { t: `<!!$e${id}>${resolveSSRNode(res)}<!!$/e${id}>` };
+  return { t: `<!--!$e${id}-->${resolveSSRNode(res)}<!--!$/e${id}-->` };
 }
 
 // Suspense Context
@@ -423,8 +424,7 @@ export function createResource<T, S>(
     if (p != undefined && typeof p === "object" && "then" in p) {
       read.loading = true;
       read.state = "pending";
-      if (ctx.writeResource) ctx.writeResource(id, p, undefined, options.deferStream);
-      return p
+      p = p
         .then(res => {
           read.loading = false;
           read.state = "ready";
@@ -439,10 +439,13 @@ export function createResource<T, S>(
           read.error = error = castError(err);
           p = null;
           notifySuspense(contexts);
+          throw error;
         });
+      if (ctx.serialize) ctx.serialize(id, p, options.deferStream);
+      return p;
     }
     ctx.resources[id].data = p;
-    if (ctx.writeResource) ctx.writeResource(id, p);
+    if (ctx.serialize) ctx.serialize(id, p);
     p = null;
     return ctx.resources[id].data;
   }
@@ -531,12 +534,8 @@ export function useTransition(): [() => boolean, (fn: () => any) => void] {
 type HydrationContext = {
   id: string;
   count: number;
-  writeResource: (
-    id: string,
-    v: Promise<any> | any,
-    error?: boolean,
-    deferStream?: boolean
-  ) => void;
+  serialize: (id: string, v: Promise<any> | any, deferStream?: boolean) => void;
+  nextRoot: (v: any) => string;
   replace: (id: string, replacement: () => any) => void;
   block: (p: Promise<any>) => void;
   resources: Record<string, any>;
@@ -596,20 +595,23 @@ export function Suspense(props: { fallback?: string; children: string }) {
   const res = runSuspense();
 
   // never suspended
-  if (suspenseComplete(value)) return res;
+  if (suspenseComplete(value)) {
+    delete ctx.suspense[id];
+    return res;
+  }
 
   done = ctx.async ? ctx.registerFragment(id) : undefined;
   return catchError(() => {
     if (ctx.async) {
       setHydrateContext({ ...ctx, count: 0, id: ctx.id + "0-f", noHydrate: true });
       const res = {
-        t: `<template id="pl-${id}"></template>${resolveSSRNode(props.fallback)}<!pl-${id}>`
+        t: `<template id="pl-${id}"></template>${resolveSSRNode(props.fallback)}<!--pl-${id}-->`
       };
       setHydrateContext(ctx);
       return res;
     }
     setHydrateContext({ ...ctx, count: 0, id: ctx.id + "0-f" });
-    ctx.writeResource(id, "$$f");
+    ctx.serialize(id, "$$f");
     return props.fallback;
   }, suspenseError);
 }

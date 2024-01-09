@@ -4,6 +4,8 @@ This contains the means to create the runtime for a custom renderer for Solid. T
 
 ## Example
 
+### Babel
+
 To use a custom renderer available in the (fictional) `solid-custom-dom` package you'd configure your babelrc as:
 ```json
 {
@@ -17,6 +19,23 @@ To use a custom renderer available in the (fictional) `solid-custom-dom` package
     ]
   ]
 }
+```
+
+### Vite
+
+To use a custom renderer available in the (fictional) `solid-custom-dom` package you'd configure your vite config as:
+```js
+import { defineConfig } from 'vite';
+import solidPlugin from 'vite-plugin-solid';
+
+export default defineConfig({
+  plugins: [solidPlugin({
+    solid: {
+      moduleName: "solid-custom-dom",
+      generate: 'universal'
+    }
+  })]
+});
 ```
 
 To create a custom renderer you must implement certain methods and export (as named exports) the results. You may also want to forward `solid-js` control flow to allow them to be auto imported as well.
@@ -38,7 +57,8 @@ export const {
   insert,
   spread,
   setProp,
-  mergeProps
+  mergeProps,
+  use
 } = createRenderer({
   createElement(string) {
     return document.createElement(string);

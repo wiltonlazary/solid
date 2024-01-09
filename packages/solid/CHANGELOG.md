@@ -1,5 +1,173 @@
 # solid-js
 
+## 1.8.9
+
+### Patch Changes
+
+- 80d4830f: fix #2016 value spread, smaller build output
+- 918586fb: fix #2017 object replacing array in `reconcile`
+- 71bea784: fix #1971 order of merged properties
+- b0862d39: fix #2014 html not replaced when resource resolves next `tick`
+- cbc8d3ee: remove seroval plugins from build output
+
+## 1.8.8
+
+### Patch Changes
+
+- 40b5d78d: chore(types): return mapped type for splitProps excluded `other` value
+- 968e2cc9: update seroval, fix #1972, fix #1980, fix #2002, support partial ALS
+- 292aba41: fix #1982 ErrorBoundary with ExternalSource
+- 7e5667ab: fix #1998 Switch relying on order
+- 8d2de12f: fix #1850 untrack in external source
+- b887587a: fix #1973 array over object reconcile
+
+## 1.8.7
+
+### Patch Changes
+
+- 22667bbc: fix: createSignal not found when bundled
+- e09a3cc3: fix timing issue with deferStream
+
+## 1.8.6
+
+### Patch Changes
+
+- 2b320376: Add types directory export for each package
+- fb7f4bc1: fix #1950 leaking error tracking
+- b092368c: feat(DEV): Add afterCreateSignal hook to DevHooks
+- 54e1aecf: update seroval, fix this, optimize star imports, fix #1952 hydration race condition
+
+## 1.8.5
+
+### Patch Changes
+
+- 80ca972f: fix `onHydrate` call being skipped
+
+## 1.8.4
+
+### Patch Changes
+
+- cf0542a4: fix #1927, fix #1929, fix #1931, update storage API
+- 3f3a3396: serialization error handling, experimental async storage
+
+## 1.8.3
+
+### Patch Changes
+
+- 1f0226e1: fix #1917 for real this time
+
+## 1.8.2
+
+### Patch Changes
+
+- b632dfd5: Add missing `indexArray` to server-side runtime.
+- dd492c5e: fix #1917, fix #1918 error handling with serialization
+- 4968fe26: Add `.js` extension to import
+
+## 1.8.1
+
+### Patch Changes
+
+- 0b9b71aa: better errors for hydration
+
+## 1.8.0
+
+### Minor Changes
+
+- 2c087cbb: update to seroval streaming serializer, change ssr markers
+- 2c087cbb: hydration perf improvement, fix #1849
+
+### Patch Changes
+
+- 2c087cbb: remove attribute quotes in template, batch serialization
+- 2c087cbb: improved serialization/guards, fix #1413, fix #1796 hydration with lazy
+- 2c087cbb: fix: missing `has` property in `SharedConfig`
+- 2c087cbb: fix #1905, fix #1908 JSX type ommissions
+
+## 1.8.0-beta.2
+
+### Minor Changes
+
+- e3a97d28: hydration perf improvement, fix #1849
+
+### Patch Changes
+
+- d797a143: fix #1905, fix #1908 JSX type ommissions
+
+## 1.8.0-beta.1
+
+### Patch Changes
+
+- f6d511db: remove attribute quotes in template, batch serialization
+- af625dd3: fix: missing `has` property in `SharedConfig`
+
+## 1.8.0-beta.0
+
+### Minor Changes
+
+- d8e0e8e8: update to seroval streaming serializer, change ssr markers
+
+### Patch Changes
+
+- bf09b838: improved serialization/guards, fix #1413, fix #1796 hydration with lazy
+
+## 1.7.12
+
+### Patch Changes
+
+- 12eb1552: fix #1875 - mergeProps not handling undefined on SSR
+- 13b1fa6e: fix #1883 initialize createDeferred with transition value
+- 10ac07af: update jsx types, iife compiler optimization
+- 8b49110b: Allow passing defer:boolean to `on`
+
+## 1.7.11
+
+### Patch Changes
+
+- 26740b88: fix #1848 Suspense Default Context Non-Null
+
+## 1.7.10
+
+### Patch Changes
+
+- 5ed448ae: Export `ContextProviderComponent`, `ResolvedChildren` and `ResolvedJSXElement` types
+- 7dd1f413: fix .pipeTo signature to return promise
+- c2008f02: Fix underscore property
+- 792e7dea: fix #1821 improve context performance
+
+## 1.7.9
+
+### Patch Changes
+
+- 44a2bf0b: fix #1814 incorrect typing embedding for h and html
+- 6cd10c73: Changes how the Setter type was declared without actually functionally changing it, fixing the Setter type being assignable to any other Setter type; fixes #1818.
+
+  Generically typed Setters must now non-null assert their parameter, i.e.
+
+  ```diff
+  function myCustomSignal<T>(v: T) {
+    const [get, set] = createSignal<T>();
+  -   const mySetter: Setter<T | undefined> = (v?) => set(v);
+  +   const mySetter: Setter<T | undefined> = (v?) => set(v!);
+
+    const [get, set] = createSignal<T>(v);
+  -   const mySetter: Setter<T> = (v?) => set(v);
+  +   const mySetter: Setter<T> = (v?) => set(v!);
+  }
+  ```
+
+- 6c9879c9: fix in introspection in stores
+- 039cf60d: update universal runtime readme
+- 852f4c76: add missing link jsx types
+
+## 1.7.8
+
+### Patch Changes
+
+- efd23186: fix #1780 invalid HTML comments
+- 51074fab: remove optional chaining, reduce bundle size
+- fe6f03f9: fix #1795 early effects running during async hydration
+
 ## 1.7.7
 
 ### Patch Changes

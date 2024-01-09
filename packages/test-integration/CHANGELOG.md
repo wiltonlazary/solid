@@ -1,5 +1,177 @@
 # test-integration
 
+## 1.8.9
+
+### Patch Changes
+
+- Updated dependencies [80d4830f]
+- Updated dependencies [918586fb]
+- Updated dependencies [71bea784]
+- Updated dependencies [b0862d39]
+- Updated dependencies [cbc8d3ee]
+  - babel-preset-solid@1.8.9
+  - solid-js@1.8.9
+
+## 1.8.8
+
+### Patch Changes
+
+- Updated dependencies [40b5d78d]
+- Updated dependencies [968e2cc9]
+- Updated dependencies [292aba41]
+- Updated dependencies [7e5667ab]
+- Updated dependencies [8d2de12f]
+- Updated dependencies [b887587a]
+  - solid-js@1.8.8
+  - babel-preset-solid@1.8.8
+
+## 1.8.7
+
+### Patch Changes
+
+- Updated dependencies [22667bbc]
+- Updated dependencies [e09a3cc3]
+  - solid-js@1.8.7
+
+## 1.8.6
+
+### Patch Changes
+
+- Updated dependencies [2b320376]
+- Updated dependencies [fb7f4bc1]
+- Updated dependencies [b092368c]
+- Updated dependencies [54e1aecf]
+  - solid-js@1.8.6
+  - babel-preset-solid@1.8.6
+
+## 1.8.5
+
+### Patch Changes
+
+- Updated dependencies [80ca972f]
+  - solid-js@1.8.5
+
+## 1.8.4
+
+### Patch Changes
+
+- Updated dependencies [cf0542a4]
+- Updated dependencies [3f3a3396]
+  - babel-preset-solid@1.8.4
+  - solid-js@1.8.4
+
+## 1.8.3
+
+### Patch Changes
+
+- Updated dependencies [1f0226e1]
+  - solid-js@1.8.3
+
+## 1.8.2
+
+### Patch Changes
+
+- Updated dependencies [b632dfd5]
+- Updated dependencies [dd492c5e]
+- Updated dependencies [4968fe26]
+  - solid-js@1.8.2
+  - babel-preset-solid@1.8.2
+
+## 1.8.1
+
+### Patch Changes
+
+- Updated dependencies [0b9b71aa]
+  - solid-js@1.8.1
+
+## 1.8.0
+
+### Patch Changes
+
+- Updated dependencies [2c087cbb]
+- Updated dependencies [2c087cbb]
+- Updated dependencies [2c087cbb]
+- Updated dependencies [2c087cbb]
+- Updated dependencies [2c087cbb]
+- Updated dependencies [2c087cbb]
+  - babel-preset-solid@1.8.0
+  - solid-js@1.8.0
+
+## 1.8.0-beta.2
+
+### Patch Changes
+
+- Updated dependencies [e3a97d28]
+- Updated dependencies [d797a143]
+  - babel-preset-solid@1.8.0-beta.2
+  - solid-js@1.8.0-beta.2
+
+## 1.8.0-beta.1
+
+### Patch Changes
+
+- Updated dependencies [f6d511db]
+- Updated dependencies [af625dd3]
+  - babel-preset-solid@1.8.0-beta.1
+  - solid-js@1.8.0-beta.1
+
+## 1.8.0-beta.0
+
+### Patch Changes
+
+- Updated dependencies [d8e0e8e8]
+- Updated dependencies [bf09b838]
+  - babel-preset-solid@1.8.0-beta.0
+  - solid-js@1.8.0-beta.0
+
+## 1.7.12
+
+### Patch Changes
+
+- Updated dependencies [12eb1552]
+- Updated dependencies [13b1fa6e]
+- Updated dependencies [10ac07af]
+- Updated dependencies [8b49110b]
+  - solid-js@1.7.12
+  - babel-preset-solid@1.7.12
+
+## 1.7.11
+
+### Patch Changes
+
+- Updated dependencies [26740b88]
+  - solid-js@1.7.11
+
+## 1.7.10
+
+### Patch Changes
+
+- Updated dependencies [5ed448ae]
+- Updated dependencies [7dd1f413]
+- Updated dependencies [c2008f02]
+- Updated dependencies [792e7dea]
+  - solid-js@1.7.10
+
+## 1.7.9
+
+### Patch Changes
+
+- Updated dependencies [44a2bf0b]
+- Updated dependencies [6cd10c73]
+- Updated dependencies [6c9879c9]
+- Updated dependencies [039cf60d]
+- Updated dependencies [852f4c76]
+  - solid-js@1.7.9
+
+## 1.7.8
+
+### Patch Changes
+
+- Updated dependencies [efd23186]
+- Updated dependencies [51074fab]
+- Updated dependencies [fe6f03f9]
+  - solid-js@1.7.8
+
 ## 1.7.7
 
 ### Patch Changes

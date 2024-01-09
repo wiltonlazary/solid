@@ -1,12 +1,17 @@
+import { Computation } from "../reactive/signal.js";
+
 export type HydrationContext = { id: string; count: number };
 
 type SharedConfig = {
   context?: HydrationContext;
   resources?: { [key: string]: any };
-  load?: (id: string) => Promise<any> | any | undefined;
+  load?: (id: string) => Promise<any> | any;
+  has?: (id: string) => boolean;
   gather?: (key: string) => void;
   registry?: Map<string, Element>;
   done?: boolean;
+  count?: number;
+  effects?: Computation<any, any>[];
 };
 
 export const sharedConfig: SharedConfig = { context: undefined, registry: undefined };
