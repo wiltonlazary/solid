@@ -1,5 +1,19 @@
 # test-integration
 
+## 1.8.11
+
+### Patch Changes
+
+- Updated dependencies [1ec67f15]
+  - solid-js@1.8.11
+
+## 1.8.10
+
+### Patch Changes
+
+- Updated dependencies [169d23b4]
+  - solid-js@1.8.10
+
 ## 1.8.9
 
 ### Patch Changes

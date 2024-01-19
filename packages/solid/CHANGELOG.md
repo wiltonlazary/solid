@@ -1,5 +1,17 @@
 # solid-js
 
+## 1.8.11
+
+### Patch Changes
+
+- 1ec67f15: fix #2028, fix #2029 revert spread value bypass, and guard multi-text
+
+## 1.8.10
+
+### Patch Changes
+
+- 169d23b4: fix disposal timing when streaming
+
 ## 1.8.9
 
 ### Patch Changes
