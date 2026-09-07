@@ -1,6 +1,11 @@
-import { setProperty, unwrap, isWrappable, StoreNode, $RAW } from "./store.js";
+import { $PROXY, $TRACK } from "solid-js";
+import { setProperty, unwrap, isWrappable, StoreNode, $RAW, $NODE, $HAS } from "./store.js";
 
 const $ROOT = Symbol("store-root");
+
+function isUnsafeKey(property: PropertyKey) {
+  return property === "__proto__" || property === "constructor" || property === "prototype";
+}
 
 export type ReconcileOptions = {
   key?: string | null;
@@ -14,6 +19,7 @@ function applyState(
   merge: boolean | undefined,
   key: string | null
 ) {
+  if (isUnsafeKey(property)) return;
   const previous = parent[property];
   if (target === previous) return;
   const isArray = Array.isArray(target);
@@ -117,6 +123,7 @@ function applyState(
 
   const targetKeys = Object.keys(target);
   for (let i = 0, len = targetKeys.length; i < len; i++) {
+    if (isUnsafeKey(targetKeys[i])) continue;
     applyState(target[targetKeys[i]], previous, targetKeys[i], merge, key);
   }
   const previousKeys = Object.keys(previous);
@@ -144,6 +151,14 @@ const setterTraps: ProxyHandler<StoreNode> = {
   get(target, property): any {
     if (property === $RAW) return target;
     const value = target[property];
+    if (
+      property === $PROXY ||
+      property === $TRACK ||
+      property === $NODE ||
+      property === $HAS ||
+      property === "__proto__"
+    )
+      return value;
     let proxy;
     return isWrappable(value)
       ? producers.get(value) ||

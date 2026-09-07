@@ -1,7 +1,7 @@
 {
   "name": "solid-js",
   "description": "A declarative JavaScript library for building user interfaces.",
-  "version": "1.9.12",
+  "version": "1.9.15",
   "author": "Ryan Carniato",
   "license": "MIT",
   "homepage": "https://solidjs.com",
@@ -222,7 +222,7 @@
     "types:universal": "tsc --project ./universal/tsconfig.json && ncp ../../node_modules/dom-expressions/src/universal.d.ts ./universal/types/universal.d.ts",
     "bench": "node --allow-natives-syntax bench/bench.cjs",
     "link": "symlink-dir . node_modules/solid-js",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.server.config.mjs",
     "coverage": "vitest run --coverage",
     "test-types": "tsc --project tsconfig.test.json"
   },
@@ -237,7 +237,7 @@
   ],
   "dependencies": {
     "csstype": "^3.1.0",
-    "seroval": "~1.5.0",
-    "seroval-plugins": "~1.5.0"
+    "seroval": "~1.5.4",
+    "seroval-plugins": "~1.5.4"
   }
 }

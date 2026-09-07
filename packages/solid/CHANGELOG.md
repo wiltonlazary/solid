@@ -1,5 +1,49 @@
 # solid-js
 
+## 1.9.15
+
+### Patch Changes
+
+- 5086b27: Make `createSelector` transition-aware. Subscribers were marked stale on `state` even when a transition was running, so a selector driving `<Show>` or `classList` stayed stale after the first `startTransition` update (router navigations, SolidStart + Suspense).
+- c6aa672: Re-subscribe `enableExternalSource` computations to the ordinary source after a transition. A computation created while a transition was running only tracked the transition-scoped source; once that source was disposed, later external updates were lost.
+- 7700341: Handle rejected module promises in `lazy()`. A failed chunk used to leave the server Suspense `_loading` flag set forever (`renderToStream` never ended, `renderToStringAsync` never resolved) and pin the client hydration `sharedConfig.count`, so the error never reached an `ErrorBoundary`. The rejection is now surfaced to the nearest boundary, and the cached promise is cleared so a later `preload()` or request can retry the import.
+- 59649bc: Make the `splitProps` proxy path honor first-match key ownership. A key listed in two groups leaked into the later group for stores and component props (`get`, `in`, `Object.keys`, spread), while the plain-object path already assigned it to the first group only.
+- 954b968: Update DOM Expressions to 0.40.10. This picks up SSR attribute coercion and template-literal quote escaping, nullish `value`/`defaultValue` on spread inputs, the SSR `!!` wrap for component-prop conditionals, and opt-in `omitServerOnlyTemplates`.
+
+## 1.9.14
+
+### Patch Changes
+
+- 629dbb8: Bump minimum seroval and seroval-plugins to 1.5.4 for security fixes
+- 81ae472: Fix memory leak with nested `lazy()` components. `lazy()` cached its `createResource` accessor in a module-scoped variable and `createResource` never released its Suspense contexts on disposal, so a disposed component tree (and its detached DOM) stayed reachable across navigations when `lazy()` boundaries were nested. The module-pinned accessor is now released on cleanup, and the resource clears its Suspense contexts and pending promise on disposal.
+- eb200e8: Use Object.prototype.hasOwnProperty.call() to support null-prototype objects in store proxies
+- a628bdf: Fix server `mergeProps` silently dropping properties that shadow `Object.prototype` methods.
+
+  `mergeProps` on the server (used during SSR) used `key in target` to skip already-seen keys.
+  Because `in` walks the prototype chain, keys such as `toString`, `valueOf`, and `hasOwnProperty`
+  were always found on the empty result object via `Object.prototype`, causing those source
+  properties to be silently ignored. The merged result then returned the inherited
+  `Object.prototype` method instead of the supplied value.
+
+  The fix replaces the `in` check with `Object.prototype.hasOwnProperty.call(target, key)` and
+  adds explicit guards for `"__proto__"` and `"constructor"` to match the client-side behaviour.
+
+- a89bac5: Fix server `Show`/`Switch` to ignore zero-arg function children, matching client behavior per #1508.
+
+## 1.9.13
+
+### Patch Changes
+
+- cfde0a1: Harden store updates against prototype pollution.
+- 4649b37: Update DOM expression runtimes to 0.40.8 to expose `classList` types.
+- a7959ca: Fix proxy invariant crash when a produce draft is returned from a getter.
+- bcc0d5d: Add `StoreReturn<T>` type
+- dad5b06: fix(store): prevent prototype pollution via setStore paths
+- 704e908: Deduplicate repeated signal reads within a computation.
+- 4b1919a: Fix createResource initial value inference
+- d598b4b: fix "Maximum call stack size exceeded" on `resolveChildren`s `results.push.apply(results, result)`
+- 72e97e8: fix class/prototype getters not getting wrapped
+
 ## 1.9.12
 
 ### Patch Changes
@@ -150,7 +194,7 @@
 ### Patch Changes
 
 - f8ae663c: Fix broken links in Readme
-- 19d0295f: fix stranded effects during hydration cancelation
+- 19d0295f: fix stranded effects during hydration cancellation
 - 26128ec0: fix #2259 attr: in ssr, updates some types
 
 ## 1.8.21
@@ -163,7 +207,7 @@
 
 ### Patch Changes
 
-- c8fe58e9: fix #2250 hydration error, fix lazy component loading, better hydration cancelation
+- c8fe58e9: fix #2250 hydration error, fix lazy component loading, better hydration cancellation
 - 80dd2769: fix #2236 improper shortcircuit in resource hydration
 
 ## 1.8.19
@@ -473,7 +517,7 @@
 - 940e5745: change to seroval serializer, better ssr fragment fixes
 - 608b3c3a: Add catchError/deprecate onError
 - 2b80f706: Reduce DOM compiler output size
-  Remove auxilary closing tags and lazy evaluate templates
+  Remove auxiliary closing tags and lazy evaluate templates
 - 8d0877e4: fix #1562 cleanup order
 - 74f00e15: Support prop/attr directives in spreads, apply prop aliases only to specific elements
 
@@ -485,7 +529,7 @@
 - cb6a383d: ensure narrowed values are non-null
 - 3de9432c: Better Input Event Types, Template Pruning, Universal Renderer Fixes
 - 2cb6f3d6: fix treeshaking in rollup 3
-- 24469762: Add a reference to the component funciton to DevComponent owner.
+- 24469762: Add a reference to the component function to DevComponent owner.
   Rename DevComponent's property from `componentName` to `name`.
 - 5545d3ee: Type narrowed flow on the server, add stale warning
 - 0dc8e365: Make non-null control flow assertion stricter by throwing
@@ -528,14 +572,14 @@
 
 - 608b3c3a: Add catchError/deprecate onError
 - 2b80f706: Reduce DOM compiler output size
-  Remove auxilary closing tags and lazy evaluate templates
+  Remove auxiliary closing tags and lazy evaluate templates
 - 8d0877e4: fix #1562 cleanup order
 - 74f00e15: Support prop/attr directives in spreads, apply prop aliases only to specific elements
 
 ### Patch Changes
 
 - 6b77d9ed: Better types on function callback control flow
-- 24469762: Add a reference to the component funciton to DevComponent owner.
+- 24469762: Add a reference to the component function to DevComponent owner.
   Rename DevComponent's property from `componentName` to `name`.
 - 5545d3ee: Type narrowed flow on the server, add stale warning
 

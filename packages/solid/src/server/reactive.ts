@@ -240,7 +240,12 @@ function resolveChildren(children: any): unknown {
     const results: any[] = [];
     for (let i = 0; i < children.length; i++) {
       const result = resolveChildren(children[i]);
-      Array.isArray(result) ? results.push.apply(results, result) : results.push(result);
+      if (Array.isArray(result)) {
+        if (result.length < 32768) results.push.apply(results, result);
+        else for (let j = 0; j < result.length; j++) results.push(result[j]);
+      } else {
+        results.push(result);
+      }
     }
     return results;
   }

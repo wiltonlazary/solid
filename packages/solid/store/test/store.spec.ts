@@ -557,6 +557,18 @@ describe("Handling functions in state", () => {
       expect(getValue()).toBe(2);
     });
   });
+
+  test("Object.create(null) with function values in reactive reads", () => {
+    createRoot(() => {
+      const [state, setState] = createStore<{ fn: () => number; name: string }>(
+        Object.assign(Object.create(null), { fn: () => 1, name: "John" })
+      );
+      const getValue = createMemo(() => state.fn());
+      expect(getValue()).toBe(1);
+      setState({ fn: () => 2 });
+      expect(getValue()).toBe(2);
+    });
+  });
 });
 
 describe("Setting state from Effects", () => {
@@ -722,6 +734,68 @@ describe("Nested Classes", () => {
     expect(sum).toBe(15);
   });
 
+  test("wrapped nested class getter", () => {
+    class CustomThing {
+      a: number;
+      b: number;
+      constructor(value: number) {
+        this.a = value;
+        this.b = 10;
+      }
+      get sum(): number {
+        return this.a + this.b;
+      }
+    }
+
+    const [inner] = createStore(new CustomThing(1));
+    const [store, setStore] = createStore({ inner });
+
+    expect(store.inner.sum).toBe(11);
+
+    let sum;
+    createRoot(() => {
+      createEffect(() => {
+        sum = store.inner.sum;
+      });
+    });
+    expect(sum).toBe(11);
+    setStore("inner", "a", 10);
+    expect(sum).toBe(20);
+    setStore("inner", "b", 5);
+    expect(sum).toBe(15);
+  });
+
+  test("wrapped nested class getter leaves methods unenumerable", () => {
+    class CustomThing {
+      a: number;
+      constructor(value: number) {
+        this.a = value;
+      }
+      get doubled(): number {
+        return this.a * 2;
+      }
+      method(): number {
+        return this.a;
+      }
+    }
+
+    const [inner] = createStore(new CustomThing(1));
+    const [store, setStore] = createStore({ inner });
+
+    expect(store.inner.doubled).toBe(2);
+    expect(Object.keys(inner)).toStrictEqual(["a"]);
+
+    let doubled;
+    createRoot(() => {
+      createEffect(() => {
+        doubled = store.inner.doubled;
+      });
+    });
+    expect(doubled).toBe(2);
+    setStore("inner", "a", 10);
+    expect(doubled).toBe(20);
+  });
+
   test("not wrapped nested class", () => {
     class CustomThing {
       a: number;
@@ -747,6 +821,37 @@ describe("Nested Classes", () => {
     expect(sum).toBe(11);
     setStore("inner", "b", 5);
     expect(sum).toBe(11);
+  });
+
+  test("not wrapped nested class getter", () => {
+    class CustomThing {
+      a: number;
+      b: number;
+      constructor(value: number) {
+        this.a = value;
+        this.b = 10;
+      }
+      get sum(): number {
+        return this.a + this.b;
+      }
+    }
+
+    const [store, setStore] = createStore({ inner: new CustomThing(1) });
+
+    let sum;
+    createRoot(() => {
+      createEffect(() => {
+        sum = store.inner.sum;
+      });
+    });
+    expect(sum).toBe(11);
+    expect(store.inner.sum).toBe(11);
+    setStore("inner", "a", 10);
+    expect(sum).toBe(11);
+    expect(store.inner.sum).toBe(20);
+    setStore("inner", "b", 5);
+    expect(sum).toBe(11);
+    expect(store.inner.sum).toBe(15);
   });
 });
 
@@ -796,6 +901,46 @@ describe("In Operator", () => {
     expect("b" in store).toBe(true);
     expect("c" in store).toBe(true);
     expect(access).toBe(0);
+  });
+});
+
+describe("Prototype pollution guard", () => {
+  test("setStore cannot pollute Object.prototype via __proto__ path", () => {
+    const [, setStore] = createStore<Record<string, any>>({ a: 1 });
+    setStore("__proto__", "polluted_a", true);
+    expect(({} as any).polluted_a).toBeUndefined();
+  });
+
+  test("setStore cannot pollute Object.prototype via __proto__ merge", () => {
+    const [, setStore] = createStore<Record<string, any>>({ a: 1 });
+    setStore("__proto__", { polluted_b: true });
+    expect(({} as any).polluted_b).toBeUndefined();
+  });
+
+  test("setStore cannot pollute via constructor.prototype", () => {
+    const [, setStore] = createStore<Record<string, any>>({ a: 1 });
+    setStore("constructor", "prototype", "polluted_c", true);
+    expect(({} as any).polluted_c).toBeUndefined();
+  });
+
+  test("setStore skips unsafe own keys while merging safe keys", () => {
+    const [store, setStore] = createStore<Record<string, any>>({ a: 1 });
+    const evil = JSON.parse('{"__proto__":{"polluted":true}}');
+    evil.safe = true;
+    evil.constructor = { prototype: { polluted: true } };
+    evil.prototype = { polluted: true };
+    setStore(evil);
+    expect(store.a).toBe(1);
+    expect(store.safe).toBe(true);
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
+  test("setStore allows constructor and prototype as final keys", () => {
+    const [store, setStore] = createStore<Record<string, any>>({ a: 1 });
+    setStore("constructor", "value");
+    setStore("prototype", "value");
+    expect(store.constructor).toBe("value");
+    expect(store.prototype).toBe("value");
   });
 });
 

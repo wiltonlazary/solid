@@ -156,6 +156,7 @@ export function createComponent<T>(Comp: (props: T) => JSX.Element, props: T): J
   return Comp(props || ({} as T));
 }
 
+export function mergeProps<T>(source: T): T;
 export function mergeProps<T, U>(source: T, source1: U): T & U;
 export function mergeProps<T, U, V>(source: T, source1: U, source2: V): T & U & V;
 export function mergeProps<T, U, V, W>(
@@ -172,7 +173,12 @@ export function mergeProps(...sources: any): any {
     if (source) {
       const descriptors = Object.getOwnPropertyDescriptors(source);
       for (const key in descriptors) {
-        if (key in target) continue;
+        if (
+          key === "__proto__" ||
+          key === "constructor" ||
+          Object.prototype.hasOwnProperty.call(target, key)
+        )
+          continue;
         Object.defineProperty(target, key, {
           enumerable: true,
           get() {
@@ -297,9 +303,9 @@ export function Show<T>(props: {
 }): string {
   let c: string | ((item: NonNullable<T> | Accessor<NonNullable<T>>) => string);
   return props.when
-    ? typeof (c = props.children) === "function"
+    ? typeof (c = props.children) === "function" && c.length > 0
       ? c(props.keyed ? props.when! : () => props.when as any)
-      : c
+      : (c as string)
     : props.fallback || "";
 }
 
@@ -314,7 +320,9 @@ export function Switch(props: {
     const w = conditions[i].when;
     if (w) {
       const c = conditions[i].children;
-      return typeof c === "function" ? c(conditions[i].keyed ? w : () => w) : c;
+      return typeof c === "function" && c.length > 0
+        ? c(conditions[i].keyed ? w : () => w)
+        : (c as string);
     }
   }
   return props.fallback || "";
@@ -548,12 +556,19 @@ export function createResource<T, S>(
 export function lazy<T extends Component<any>>(
   fn: () => Promise<{ default: T }>
 ): T & { preload: () => Promise<{ default: T }> } {
-  let p: Promise<{ default: T }> & { resolved?: T };
+  type LazyPromise = Promise<{ default: T }> & { resolved?: T; error?: any };
+  let p: LazyPromise | undefined;
   let load = (id?: string) => {
     if (!p) {
-      p = fn();
-      p.then(mod => (p.resolved = mod.default));
-      if (id) sharedConfig.context!.lazy[id] = p;
+      const cur = (p = fn() as LazyPromise);
+      cur.then(
+        mod => (cur.resolved = mod.default),
+        err => {
+          cur.error = castError(err);
+          if (p === cur) p = undefined;
+        }
+      );
+      if (id) sharedConfig.context!.lazy[id] = cur;
     }
     return p;
   };
@@ -562,22 +577,28 @@ export function lazy<T extends Component<any>>(
     preload?: () => Promise<{ default: T }>;
   } = props => {
     const id = sharedConfig.context!.id;
-    let ref = sharedConfig.context!.lazy[id];
-    if (ref) p = ref;
-    else load(id);
-    if (p.resolved) return p.resolved(props);
+    const current = (sharedConfig.context!.lazy[id] || load(id)!) as LazyPromise;
+    if (current.resolved) return current.resolved(props);
+    if (current.error) throw current.error;
     const ctx = useContext(SuspenseContext);
-    const track = { _loading: true, error: undefined };
+    const track = { _loading: true, error: undefined as any };
     if (ctx) {
       ctx.resources.set(id, track);
       contexts.add(ctx);
     }
     if (sharedConfig.context!.async) {
       sharedConfig.context!.block(
-        p.then(() => {
-          track._loading = false;
-          notifySuspense(contexts);
-        })
+        current.then(
+          () => {
+            track._loading = false;
+            notifySuspense(contexts);
+          },
+          err => {
+            track._loading = false;
+            track.error = castError(err);
+            notifySuspense(contexts);
+          }
+        )
       );
     }
     return "";

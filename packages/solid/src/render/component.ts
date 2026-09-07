@@ -3,6 +3,7 @@ import {
   createSignal,
   createResource,
   createMemo,
+  onCleanup,
   devComponent,
   $PROXY,
   SUPPORTS_PROXY,
@@ -292,17 +293,20 @@ export function splitProps<
 
   if (SUPPORTS_PROXY && $PROXY in props) {
     const blocked = len > 1 ? keys.flat() : keys[0];
+    const claimed = new Set<PropertyKey>();
     const res = keys.map(k => {
+      // a key belongs to the first group that lists it (matches non-proxy path)
+      const owned = k.filter(property => !claimed.has(property) && (claimed.add(property), true));
       return new Proxy(
         {
           get(property) {
-            return k.includes(property) ? props[property as any] : undefined;
+            return owned.includes(property) ? props[property as any] : undefined;
           },
           has(property) {
-            return k.includes(property) && property in props;
+            return owned.includes(property) && property in props;
           },
           keys() {
-            return k.filter(property => property in props);
+            return owned.filter(property => property in props);
           }
         },
         propTraps
@@ -356,28 +360,56 @@ export function splitProps<
 export function lazy<T extends Component<any>>(
   fn: () => Promise<{ default: T }>
 ): T & { preload: () => Promise<{ default: T }> } {
-  let comp: () => T | undefined;
+  let comp: (() => T | undefined) | undefined;
   let p: Promise<{ default: T }> | undefined;
+  const load = () => {
+    if (!p) {
+      const cur = (p = fn());
+      cur.then(
+        mod => {
+          comp = () => mod.default;
+        },
+        () => {
+          if (p === cur) p = undefined;
+        }
+      );
+    }
+    return p;
+  };
   const wrap: T & { preload?: () => void } = ((props: any) => {
     const ctx = sharedConfig.context;
     if (ctx) {
       const [s, set] = createSignal<T>();
       sharedConfig.count || (sharedConfig.count = 0);
       sharedConfig.count++;
-      (p || (p = fn())).then(mod => {
-        !sharedConfig.done && setHydrateContext(ctx);
-        sharedConfig.count!--;
-        set(() => mod.default);
-        setHydrateContext();
-      });
+      load().then(
+        mod => {
+          !sharedConfig.done && setHydrateContext(ctx);
+          sharedConfig.count!--;
+          set(() => mod.default);
+          setHydrateContext();
+        },
+        err => {
+          !sharedConfig.done && setHydrateContext(ctx);
+          sharedConfig.count!--;
+          set(
+            () =>
+              (() => {
+                throw err;
+              }) as unknown as T
+          );
+          setHydrateContext();
+        }
+      );
       comp = s;
     } else if (!comp) {
-      const [s] = createResource<T>(() => (p || (p = fn())).then(mod => mod.default));
+      const [s] = createResource<T>(() => load().then(mod => mod.default));
       comp = s;
+      onCleanup(() => (comp = undefined));
     }
     let Comp: T | undefined;
     return createMemo(() =>
-      (Comp = comp())
+      (Comp = comp?.())
         ? untrack(() => {
             if (IS_DEV) Object.assign(Comp!, { [$DEVCOMP]: true });
             if (!ctx || sharedConfig.done) return Comp!(props);
@@ -390,7 +422,7 @@ export function lazy<T extends Component<any>>(
         : ""
     ) as unknown as JSX.Element;
   }) as T;
-  wrap.preload = () => p || ((p = fn()).then(mod => (comp = () => mod.default)), p);
+  wrap.preload = () => load();
   return wrap as T & { preload: () => Promise<{ default: T }> };
 }
 

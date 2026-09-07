@@ -23,6 +23,15 @@ describe("setState with reconcile", () => {
     expect(state.missing).toBeUndefined();
   });
 
+  test("Reconcile skips unsafe object keys", () => {
+    const [state, setState] = createStore<Record<string, any>>({ data: 2 });
+    const next = JSON.parse('{"data":5,"__proto__":{"polluted":true}}');
+    next.constructor = { prototype: { polluted: true } };
+    setState(reconcile(next));
+    expect(state.data).toBe(5);
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
   test("Reconcile array with nulls", () => {
     const [state, setState] = createStore([null, "a"]);
     expect(state[0]).toBe(null);
@@ -279,6 +288,26 @@ describe("setState with produce", () => {
     expect(Array.isArray(state)).toBe(true);
     expect(state[1].done).toBe(true);
     expect(state[2].title).toBe("Go Home");
+  });
+
+  test("does not violate proxy invariants when a getter returns a leaked draft", () => {
+    let leaked: any;
+    const [state, setState] = createStore<{ items: number[]; readonly probe: number[] }>({
+      items: [],
+      get probe() {
+        void this.items;
+        return leaked;
+      }
+    });
+
+    expect(() => {
+      setState(
+        produce(draft => {
+          leaked = draft.items;
+          state.probe;
+        })
+      );
+    }).not.toThrow();
   });
 });
 

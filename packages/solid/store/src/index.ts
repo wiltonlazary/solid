@@ -9,6 +9,7 @@ export type {
   SolidStore,
   Store,
   StoreNode,
+  StoreReturn,
   StorePathRange,
   StoreSetter
 } from "./store.js";

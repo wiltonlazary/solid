@@ -12,6 +12,8 @@ export default defineConfig({
     port: 3000
   },
   test: {
+    name: "client",
+    exclude: ["**/node_modules/**", "**/dist/**", "test/server/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
@@ -19,13 +21,10 @@ export default defineConfig({
       exclude: ["**/*.d.ts", "src/server/*.ts", "store/src/**/server.ts"]
     },
     environment: "jsdom",
-    transformMode: { web: [/\.[jt]sx?$/] },
-    // otherwise, solid would be loaded twice:
-    deps: { registerNodeLoader: true },
-    // if you have few tests, try commenting one
-    // or both out to improve performance:
-    threads: false,
+    // single-process forks; isolate:false matches the old threads:false setup
+    pool: "forks",
     isolate: false,
+    maxWorkers: 1,
     globals: true
   },
   resolve: {

@@ -1,5 +1,17 @@
 # babel-preset-solid
 
+## 1.9.15
+
+### Patch Changes
+
+- 954b968: Update DOM Expressions to 0.40.10. This picks up SSR attribute coercion and template-literal quote escaping, nullish `value`/`defaultValue` on spread inputs, the SSR `!!` wrap for component-prop conditionals, and opt-in `omitServerOnlyTemplates`.
+- Updated dependencies [5086b27]
+- Updated dependencies [c6aa672]
+- Updated dependencies [7700341]
+- Updated dependencies [59649bc]
+- Updated dependencies [954b968]
+  - solid-js@1.9.15
+
 ## 1.9.12
 
 ### Patch Changes
@@ -238,7 +250,7 @@
 - f7dc355f: Remove FunctionElement from JSX.Element types
 - 940e5745: change to seroval serializer, better ssr fragment fixes
 - 2b80f706: Reduce DOM compiler output size
-  Remove auxilary closing tags and lazy evaluate templates
+  Remove auxiliary closing tags and lazy evaluate templates
 - 74f00e15: Support prop/attr directives in spreads, apply prop aliases only to specific elements
 
 ### Patch Changes
@@ -277,7 +289,7 @@
 ### Minor Changes
 
 - 2b80f706: Reduce DOM compiler output size
-  Remove auxilary closing tags and lazy evaluate templates
+  Remove auxiliary closing tags and lazy evaluate templates
 - 74f00e15: Support prop/attr directives in spreads, apply prop aliases only to specific elements
 
 ## 1.7.0-beta.0

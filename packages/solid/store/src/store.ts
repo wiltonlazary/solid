@@ -1,4 +1,4 @@
-import { getListener, batch, DEV, $PROXY, $TRACK, createSignal } from "solid-js";
+import { $PROXY, $TRACK, batch, createSignal, DEV, getListener } from "solid-js";
 
 // replaced during build
 export const IS_DEV = "_SOLID_DEV_" as string | boolean;
@@ -52,11 +52,27 @@ function wrap<T extends StoreNode>(value: T): T {
     Object.defineProperty(value, $PROXY, { value: (p = new Proxy(value, proxyTraps)) });
     if (!Array.isArray(value)) {
       const keys = Object.keys(value),
-        desc = Object.getOwnPropertyDescriptors(value);
+        desc = Object.getOwnPropertyDescriptors(value),
+        proto = Object.getPrototypeOf(value);
+
+      const isClass =
+        proto !== null &&
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        proto !== Object.prototype;
+      if (isClass) {
+        const descriptors = Object.getOwnPropertyDescriptors(proto);
+        keys.push(...Object.keys(descriptors));
+        Object.assign(desc, descriptors);
+      }
+
       for (let i = 0, l = keys.length; i < l; i++) {
         const prop = keys[i];
+        if (isClass && prop === "constructor") continue;
         if (desc[prop].get) {
           Object.defineProperty(value, prop, {
+            configurable: true,
             enumerable: desc[prop].enumerable,
             get: desc[prop].get!.bind(p)
           });
@@ -172,7 +188,7 @@ const proxyTraps: ProxyHandler<StoreNode> = {
       const desc = Object.getOwnPropertyDescriptor(target, property);
       if (
         getListener() &&
-        (typeof value !== "function" || target.hasOwnProperty(property)) &&
+        (typeof value !== "function" || Object.prototype.hasOwnProperty.call(target, property)) &&
         !(desc && desc.get)
       )
         value = getNode(nodes, property, value)();
@@ -215,6 +231,10 @@ export function setProperty(
   value: any,
   deleting: boolean = false
 ): void {
+  if (property === "__proto__") {
+    if (IS_DEV) console.warn(`Refusing to set "__proto__" on a store.`);
+    return;
+  }
   if (!deleting && state[property] === value) return;
   const prev = state[property],
     len = state.length;
@@ -244,8 +264,13 @@ function mergeStoreNode(state: StoreNode, value: Partial<StoreNode>) {
   const keys = Object.keys(value);
   for (let i = 0; i < keys.length; i += 1) {
     const key = keys[i];
+    if (isUnsafeKey(key)) continue;
     setProperty(state, key, value[key]);
   }
+}
+
+function isUnsafeKey(property: PropertyKey) {
+  return property === "__proto__" || property === "constructor" || property === "prototype";
 }
 
 function updateArray(
@@ -273,6 +298,11 @@ export function updatePath(current: StoreNode, path: any[], traversed: PropertyK
     part = path.shift();
     const partType = typeof part,
       isArray = Array.isArray(current);
+
+    if (partType === "string" && (part === "__proto__" || (path.length > 1 && isUnsafeKey(part)))) {
+      if (IS_DEV) console.warn(`Refusing to traverse unsafe key "${part}" on a store.`);
+      return;
+    }
 
     if (Array.isArray(part)) {
       // Ex. update('data', [2, 23], 'label', l => l + ' !!!');
@@ -493,6 +523,8 @@ export interface SetStoreFunction<T> {
   ): void;
 }
 
+export type StoreReturn<T> = [get: Store<T>, set: SetStoreFunction<T>];
+
 /**
  * Creates a reactive store that can be read through a proxy object and written with a setter function
  *
@@ -502,7 +534,7 @@ export function createStore<T extends object = {}>(
   ...[store, options]: {} extends T
     ? [store?: T | Store<T>, options?: { name?: string }]
     : [store: T | Store<T>, options?: { name?: string }]
-): [get: Store<T>, set: SetStoreFunction<T>] {
+): StoreReturn<T> {
   const unwrappedStore = unwrap((store || {}) as T);
   const isArray = Array.isArray(unwrappedStore);
   if (IS_DEV && typeof unwrappedStore !== "object" && typeof unwrappedStore !== "function")

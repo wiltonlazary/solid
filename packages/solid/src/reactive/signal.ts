@@ -577,19 +577,19 @@ function isPromise(v: any): v is Promise<any> {
  *
  * @description https://docs.solidjs.com/reference/basic-reactivity/create-resource
  */
-export function createResource<T, R = unknown>(
-  fetcher: ResourceFetcher<true, T, R>,
-  options: InitializedResourceOptions<NoInfer<T>, true>
-): InitializedResourceReturn<T, R>;
+export function createResource<T, R = unknown, I = T>(
+  fetcher: (k: true, info: ResourceFetcherInfo<T | I, R>) => T | Promise<T>,
+  options: ResourceOptions<T | I, true> & { initialValue: I }
+): InitializedResourceReturn<T | I, R>;
 export function createResource<T, R = unknown>(
   fetcher: ResourceFetcher<true, T, R>,
   options?: ResourceOptions<NoInfer<T>, true>
 ): ResourceReturn<T, R>;
-export function createResource<T, S, R = unknown>(
+export function createResource<T, S, R = unknown, I = T>(
   source: ResourceSource<S>,
-  fetcher: ResourceFetcher<S, T, R>,
-  options: InitializedResourceOptions<NoInfer<T>, S>
-): InitializedResourceReturn<T, R>;
+  fetcher: (k: S, info: ResourceFetcherInfo<T | I, R>) => T | Promise<T>,
+  options: ResourceOptions<T | I, S> & { initialValue: I }
+): InitializedResourceReturn<T | I, R>;
 export function createResource<T, S, R = unknown>(
   source: ResourceSource<S>,
   fetcher: ResourceFetcher<S, T, R>,
@@ -632,6 +632,14 @@ export function createResource<T, S, R>(
     [state, setState] = createSignal<"unresolved" | "pending" | "ready" | "refreshing" | "errored">(
       resolved ? "ready" : "unresolved"
     );
+
+  if (Owner)
+    onCleanup(() => {
+      for (const c of contexts.keys()) c.decrement!();
+      contexts.clear();
+      if (Transition && pr) Transition.promises.delete(pr);
+      pr = null;
+    });
 
   if (sharedConfig.context) {
     id = sharedConfig.getNextContextId();
@@ -843,7 +851,8 @@ export function createSelector<T, U = T>(
       for (const [key, val] of subs.entries())
         if (fn(key, v) !== fn(key, p!)) {
           for (const c of val.values()) {
-            c.state = STALE;
+            if (Transition && Transition.running) c.tState = STALE;
+            else c.state = STALE;
             if (c.pure) Updates!.push(c);
             else Effects!.push(c);
           }
@@ -1306,20 +1315,23 @@ export function readSignal(this: SignalState<any> | Memo<any>) {
     }
   }
   if (Listener) {
-    const sSlot = this.observers ? this.observers.length : 0;
-    if (!Listener.sources) {
-      Listener.sources = [this];
-      Listener.sourceSlots = [sSlot];
-    } else {
-      Listener.sources.push(this);
-      Listener.sourceSlots!.push(sSlot);
-    }
-    if (!this.observers) {
-      this.observers = [Listener];
-      this.observerSlots = [Listener.sources.length - 1];
-    } else {
-      this.observers.push(Listener);
-      this.observerSlots!.push(Listener.sources.length - 1);
+    const observers = this.observers;
+    if (!observers || observers[observers.length - 1] !== Listener) {
+      const sSlot = observers ? observers.length : 0;
+      if (!Listener.sources) {
+        Listener.sources = [this];
+        Listener.sourceSlots = [sSlot];
+      } else {
+        Listener.sources.push(this);
+        Listener.sourceSlots!.push(sSlot);
+      }
+      if (!observers) {
+        this.observers = [Listener];
+        this.observerSlots = [Listener.sources.length - 1];
+      } else {
+        observers.push(Listener);
+        this.observerSlots!.push(Listener.sources.length - 1);
+      }
     }
   }
   if (runningTransition && Transition!.sources.has(this)) return this.tValue;
@@ -1475,11 +1487,20 @@ function createComputation<Next, Init = unknown>(
     const ordinary = ExternalSourceConfig.factory(sourceFn, trigger);
     onCleanup(() => ordinary.dispose());
     let inTransition: ExternalSource | undefined;
+    let trackedOrdinary = false;
     const triggerInTransition: () => void = () =>
       startTransition(trigger).then(() => {
         if (inTransition) {
           inTransition.dispose();
           inTransition = undefined;
+          // A computation created while a transition was running only ever
+          // tracked the transition-scoped source, so its ordinary source has no
+          // recorded dependencies. Now that the transition is over, re-trigger
+          // once so the computation runs through `ordinary` again and
+          // re-subscribes; otherwise it would never receive further external
+          // updates. If the computation was disposed in the meantime this is a
+          // no-op because it is no longer an observer of `track`.
+          if (!trackedOrdinary) trigger();
         }
       });
     c.fn = x => {
@@ -1489,6 +1510,7 @@ function createComputation<Next, Init = unknown>(
           inTransition = ExternalSourceConfig!.factory(sourceFn, triggerInTransition);
         return inTransition.track(x);
       }
+      trackedOrdinary = true;
       return ordinary.track(x);
     };
   }
@@ -1759,7 +1781,12 @@ function resolveChildren(children: JSX.Element | Accessor<any>): ResolvedChildre
     const results: any[] = [];
     for (let i = 0; i < children.length; i++) {
       const result = resolveChildren(children[i]);
-      Array.isArray(result) ? results.push.apply(results, result) : results.push(result);
+      if (Array.isArray(result)) {
+        if (result.length < 32768) results.push.apply(results, result);
+        else for (let j = 0; j < result.length; j++) results.push(result[j]);
+      } else {
+        results.push(result);
+      }
     }
     return results;
   }

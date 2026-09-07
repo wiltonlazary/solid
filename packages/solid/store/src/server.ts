@@ -1,4 +1,4 @@
-import type { SetStoreFunction, Store } from "./store.js";
+import type { SetStoreFunction, Store, StoreReturn } from "./store.js";
 
 export type {
   ArrayFilterFn,
@@ -10,6 +10,7 @@ export type {
   SolidStore,
   Store,
   StoreNode,
+  StoreReturn,
   StorePathRange,
   StoreSetter
 } from "./store.js";
@@ -29,6 +30,7 @@ export function unwrap<T>(item: T): T {
 }
 
 export function setProperty(state: any, property: PropertyKey, value: any, force?: boolean) {
+  if (property === "__proto__") return;
   if (!force && state[property] === value) return;
   if (value === undefined) {
     delete state[property];
@@ -39,8 +41,13 @@ function mergeStoreNode(state: any, value: any, force?: boolean) {
   const keys = Object.keys(value);
   for (let i = 0; i < keys.length; i += 1) {
     const key = keys[i];
+    if (isUnsafeKey(key)) continue;
     setProperty(state, key, value[key], force);
   }
+}
+
+function isUnsafeKey(property: PropertyKey) {
+  return property === "__proto__" || property === "constructor" || property === "prototype";
 }
 
 function updateArray(
@@ -67,6 +74,9 @@ export function updatePath(current: any, path: any[], traversed: PropertyKey[] =
     part = path.shift();
     const partType = typeof part,
       isArray = Array.isArray(current);
+
+    if (partType === "string" && (part === "__proto__" || (path.length > 1 && isUnsafeKey(part))))
+      return;
 
     if (Array.isArray(part)) {
       // Ex. update('data', [2, 23], 'label', l => l + ' !!!');
@@ -105,7 +115,7 @@ export function updatePath(current: any, path: any[], traversed: PropertyKey[] =
   } else setProperty(current, part, value);
 }
 
-export function createStore<T>(state: T | Store<T>): [Store<T>, SetStoreFunction<T>] {
+export function createStore<T>(state: T | Store<T>): StoreReturn<T> {
   const isArray = Array.isArray(state);
   function setStore(...args: any[]): void {
     isArray && args.length === 1 ? updateArray(state, args[0]) : updatePath(state, args);
@@ -136,6 +146,7 @@ export function reconcile<T extends U, U extends object>(
     const targetKeys = Object.keys(value) as (keyof T)[];
     for (let i = 0, len = targetKeys.length; i < len; i++) {
       const key = targetKeys[i];
+      if (isUnsafeKey(key)) continue;
       setProperty(state, key, value[key]);
     }
     const previousKeys = Object.keys(state) as (keyof T)[];
